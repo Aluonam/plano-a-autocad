@@ -1,4 +1,4 @@
-# Descarga VectorCraft y CADCraft (versiones portables oficiales, licencia MIT/Apache-2.0),
+﻿# Descarga VectorCraft y CADCraft (versiones portables oficiales, licencia MIT/Apache-2.0),
 # comprueba su huella SHA-256 y los descomprime donde los espera Plano a AutoCAD.
 # Uso (PowerShell, en la carpeta del repositorio):  .\instalar.ps1
 $ErrorActionPreference = "Stop"

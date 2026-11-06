@@ -1,4 +1,4 @@
-# Convierte un plano (imagen escaneada, foto o PDF) a DXF y DWG para AutoCAD.
+﻿# Convierte un plano (imagen escaneada, foto o PDF) a DXF y DWG para AutoCAD.
 # Uso: .\plano-a-cad.ps1 -Entrada "C:\ruta\plano.jpg" [-Preset "Technical Drawing"] [-Vectorizar]
 param(
   [Parameter(Mandatory=$true)][string]$Entrada,
