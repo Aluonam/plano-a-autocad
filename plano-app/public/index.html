@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Plano a AutoCAD</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1565c0">
+<link rel="icon" href="/icono-192.png">
+<link rel="apple-touch-icon" href="/icono-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Plano a CAD">
+<style>
+  :root { --azul: #1565c0; --gris: #eef1f5; --texto: #1d2733; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--texto); background: #fafbfc; overflow-x: hidden; overflow-wrap: anywhere; }
+  header { background: var(--azul); color: #fff; padding: 14px 18px; }
+  header h1 { margin: 0; font-size: 1.3rem; }
+  #movil { margin: 4px 0 0; font-size: .9rem; opacity: .9; }
+  main { max-width: 900px; margin: 0 auto; padding: 12px; }
+  .paso { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 4px #0002; margin-bottom: 14px; }
+  .oculto { display: none; }
+  h2 { margin: 0 0 6px; font-size: 1.15rem; }
+  h3 { margin: 18px 0 4px; font-size: 1rem; }
+  .ayuda { margin: 2px 0 10px; color: #566; font-size: .92rem; }
+  #vista { filter: invert(1) hue-rotate(180deg); border: 1px solid #c8d0da; }
+  canvas, #vista { display: block; width: 100%; height: auto; border-radius: 8px; background: var(--gris); touch-action: none; }
+  .fila { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+  button, .btn, select, input[type=number], input[type=text] {
+    font: inherit; padding: 11px 14px; border-radius: 9px; border: 1px solid #c8d0da; background: #fff; color: inherit;
+  }
+  button, .btn { cursor: pointer; display: inline-block; text-align: center; text-decoration: none; }
+  .principal { background: var(--azul); color: #fff; border-color: var(--azul); font-weight: 600; }
+  .grande { width: 100%; padding: 15px; font-size: 1.1rem; margin-top: 14px; }
+  .bloque { display: block; width: 100%; margin-top: 10px; }
+  label.rango { display: block; margin-top: 10px; font-size: .95rem; }
+  label.rango input { width: 100%; }
+  .chk { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  input[type=number] { width: 9em; }
+  input[type=text] { width: 100%; }
+  #estado { padding: 10px 0; }
+  .ok { color: #1b7a33; font-weight: 600; }
+  .error { color: #b3261e; font-weight: 600; }
+  .ruedita { display: inline-block; width: 18px; height: 18px; border: 3px solid #ccd; border-top-color: var(--azul); border-radius: 50%; animation: g 1s linear infinite; vertical-align: -3px; margin-right: 8px; }
+  @keyframes g { to { transform: rotate(360deg); } }
+  .descargas a { flex: 1; min-width: 140px; }
+  .info { width: 24px; height: 24px; padding: 0; margin-left: 6px; border-radius: 50%; border: 1.5px solid var(--azul);
+    color: var(--azul); background: #fff; font: italic 700 14px/20px Georgia, serif; vertical-align: 2px; }
+  .info.activo { background: var(--azul); color: #fff; }
+  .explica { background: #e8f1fb; border-left: 4px solid var(--azul); border-radius: 6px; padding: 10px 12px; margin: 4px 0 10px; font-size: .92rem; }
+  .opcion { display: flex; gap: 10px; align-items: flex-start; border: 1px solid #c8d0da; border-radius: 9px; padding: 10px 12px; margin-top: 8px; cursor: pointer; }
+  .opcion input { margin-top: 4px; transform: scale(1.25); }
+  .opcion:has(input:checked) { border-color: var(--azul); background: #f2f7fd; }
+  .tarjeta { border: 1px solid #c8d0da; border-radius: 10px; padding: 10px 12px; }
+  .pasoMedida { margin: 6px 0 8px; font-weight: 600; }
+  .num { display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--azul); color: #fff; text-align: center; font-size: .85rem; line-height: 22px; margin-right: 6px; }
+  .estadoMedida { margin: 8px 0 4px; font-size: .92rem; }
+  .pendiente { color: #a35a00; font-weight: 600; }
+  #real { width: 8em; }
+  small { color: #667; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Plano a AutoCAD</h1>
+  <p id="movil"></p>
+</header>
+<main>
+
+<section id="p1" class="paso">
+  <h2>1. Foto del plano <button class="info" data-ayuda="ayFoto" aria-label="Más información">i</button></h2>
+  <p class="ayuda">Haz la foto lo más de frente posible, con buena luz y la hoja entera dentro.</p>
+  <p class="explica oculto" id="ayFoto">Consejos para que se reconozca bien: pon la hoja sobre una mesa de otro color, evita tu sombra y los reflejos, y acércate lo suficiente para que la hoja ocupe casi toda la foto. Repasa los muros con un trazo más grueso que el resto, y dibuja las puertas como un hueco en el muro con su arco de apertura.</p>
+  <label class="btn principal bloque">Hacer foto<input type="file" accept="image/*" capture="environment" id="foto" hidden></label>
+  <label class="btn bloque">Elegir una imagen o escaneo<input type="file" accept="image/*" id="archivo" hidden></label>
+</section>
+
+<section id="p2" class="paso oculto">
+  <h2>2. Marca las esquinas de la hoja <button class="info" data-ayuda="ayEsquinas" aria-label="Más información">i</button></h2>
+  <p class="ayuda">Arrastra los cuatro puntos azules a las esquinas de la hoja.</p>
+  <p class="explica oculto" id="ayEsquinas">Con las cuatro esquinas, la foto se endereza como si estuviera escaneada. Al arrastrar un punto aparece una lupa para colocarlo con precisión. Si la foto ya está recta y recortada, pulsa «Usar la foto entera».</p>
+  <canvas id="cvEsq"></canvas>
+  <h3>Tamaño de la hoja <button class="info" data-ayuda="ayFormato" aria-label="Más información">i</button></h3>
+  <p class="explica oculto" id="ayFormato">Al hacer la foto un poco inclinada, la hoja se deforma. Si has marcado las esquinas de una hoja DIN A completa (A4, A3, A2…), elige esa opción y la proporción saldrá exacta. Si has marcado solo una parte de la hoja, o es otro tamaño de papel, deja «Otro tamaño».</p>
+  <select id="formato" class="bloque">
+    <option value="din">Hoja DIN A entera: A4, A3, A2…</option>
+    <option value="auto">Otro tamaño o solo una parte de la hoja</option>
+  </select>
+  <div class="fila">
+    <button id="todo">Usar la foto entera</button>
+    <button id="girar">Girar 90°</button>
+    <button id="otraFoto">Otra foto</button>
+  </div>
+  <button class="principal grande" id="enderezar">Enderezar y seguir</button>
+</section>
+
+<section id="p3" class="paso oculto">
+  <h2>3. Limpieza <button class="info" data-ayuda="ayLimpieza" aria-label="Más información">i</button></h2>
+  <p class="explica oculto" id="ayLimpieza">Lo que quede en negro se convertirá en líneas de AutoCAD, y lo blanco se ignora. Si ves sombras o manchas en negro, sube el primer control. Si se borran líneas del dibujo, bájalo. El segundo control solo hace falta si la luz de la foto es muy desigual.</p>
+  <canvas id="cvLimpio"></canvas>
+  <label class="rango">Quitar sombras y manchas <input type="range" id="sens" min="2" max="40" value="14"></label>
+  <label class="rango">Compensar luz desigual <input type="range" id="ventana" min="5" max="80" value="25"></label>
+  <label class="chk"><input type="checkbox" id="motas" checked> Quitar puntitos sueltos</label>
+  <label class="chk"><input type="checkbox" id="sinLimpiar"> No limpiar, usar la foto tal cual</label>
+  <button class="principal grande" id="aDatos">Seguir</button>
+</section>
+
+<section id="p4" class="paso oculto">
+  <h2>4. Datos del plano</h2>
+
+  <h3>¿Qué has dibujado? <button class="info" data-ayuda="ayTipo" aria-label="Más información">i</button></h3>
+  <p class="explica oculto" id="ayTipo">«Plano de vivienda o local» reconoce los muros, las puertas y las ventanas y los convierte en muros, bloques de puerta y bloques de ventana de AutoCAD, cada uno en su capa. «Calco exacto» copia el dibujo tal cual, línea a línea, sin reconocer nada: sirve para logotipos, piezas o dibujos que no son planos de edificios.</p>
+  <label class="opcion"><input type="radio" name="tipo" value="plano" checked> <span><b>Plano de vivienda o local</b><br><small>Reconoce muros, puertas y ventanas</small></span></label>
+  <label class="opcion"><input type="radio" name="tipo" value="calco"> <span><b>Calco exacto</b><br><small>Copia el dibujo tal cual</small></span></label>
+
+  <div id="bloqueMuros">
+    <h3>¿Cómo están dibujados los muros? <button class="info" data-ayuda="ayMuros" aria-label="Más información">i</button></h3>
+    <p class="explica oculto" id="ayMuros">Para reconocer los muros, tienen que distinguirse del resto del dibujo. Elige «Trazo grueso» si los muros están repasados con una línea más gruesa o rellenos. Elige «Dos líneas» si cada muro está dibujado con dos líneas paralelas finas. Las puertas se reconocen por el hueco en el muro y el arco de apertura, y las ventanas por las líneas finas dentro del hueco.</p>
+    <label class="opcion"><input type="radio" name="muros" value="grueso" checked> <span><b>Trazo grueso</b><br><small>Muros repasados o rellenos</small></span></label>
+    <label class="opcion"><input type="radio" name="muros" value="dobles"> <span><b>Dos líneas paralelas</b><br><small>Cada muro con dos líneas finas</small></span></label>
+  </div>
+
+  <div id="bloqueTrazo" class="oculto">
+    <h3>Tipo de trazo <button class="info" data-ayuda="ayTrazo" aria-label="Más información">i</button></h3>
+    <p class="explica oculto" id="ayTrazo">Ajusta cómo de fiel es el calco. «Plano técnico» endereza las líneas y las esquinas. «Croquis a mano alzada» respeta más las curvas y el pulso del dibujo.</p>
+    <select id="preset" class="bloque">
+      <option value="Technical Drawing">Plano técnico o impreso</option>
+      <option value="Line Art">Dibujo de líneas finas</option>
+      <option value="Sketched Art">Croquis a mano alzada</option>
+      <option value="Black and White Logo">Formas rellenas</option>
+    </select>
+  </div>
+
+  <h3>Medida de referencia <button class="info" data-ayuda="ayMedida" aria-label="Más información">i</button></h3>
+  <p class="explica oculto" id="ayMedida">Sirve para que el plano salga a tamaño real en AutoCAD. Elige algo cuya medida sepas: una cota escrita en el plano, el largo de un muro o el ancho de una puerta, que suele ser de 0,80 m. Toca sus dos extremos en la imagen y escribe cuánto mide. Si no marcas nada, la escala se calcula suponiendo que las puertas miden 80 cm. Es aproximada y conviene revisarla.</p>
+  <div class="tarjeta">
+    <p class="pasoMedida"><span class="num">1</span> Toca en el dibujo el principio y el final de algo que sepas cuánto mide.</p>
+    <canvas id="cvMedida"></canvas>
+    <p id="estadoLinea" class="estadoMedida"></p>
+    <p class="pasoMedida"><span class="num">2</span> ¿Cuánto mide en la realidad?</p>
+    <div class="fila">
+      <input type="text" id="real" inputmode="decimal" placeholder="Ej.: 0,80" autocomplete="off">
+      <select id="unidad">
+        <option value="m">metros</option>
+        <option value="cm">centímetros</option>
+        <option value="mm">milímetros</option>
+      </select>
+      <button id="borrarCal">Borrar la línea</button>
+    </div>
+    <p id="calInfo" class="estadoMedida"></p>
+  </div>
+
+  <h3>Nombre del plano <button class="info" data-ayuda="ayNombre" aria-label="Más información">i</button></h3>
+  <p class="explica oculto" id="ayNombre">Es el nombre que tendrán los ficheros DWG y DXF, por ejemplo «planta baja» o «casa García». Si lo dejas vacío se llamará «plano».</p>
+  <input type="text" id="nombre" placeholder="Por ejemplo: planta baja">
+  <button class="principal grande" id="convertir">Convertir a AutoCAD</button>
+</section>
+
+<section id="p5" class="paso oculto">
+  <h2>5. Resultado</h2>
+  <div id="estado"></div>
+  <img id="vista" alt="Vista previa del plano convertido" class="oculto">
+  <div class="fila descargas oculto" id="descargas">
+    <a class="btn principal" id="bajarDwg">Descargar DWG</a>
+    <a class="btn" id="bajarDxf">Descargar DXF</a>
+  </div>
+  <p id="detalles" class="ayuda"></p>
+  <div class="fila">
+    <button id="ajustar">Ajustar y repetir</button>
+    <button class="principal" id="nuevo">Convertir otro plano</button>
+  </div>
+</section>
+
+</main>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const MAX_FOTO = 3000;   // lado mayor de la foto que se procesa
+const LADO_SALIDA = 2400; // lado mayor de la imagen que se vectoriza
+const MAX_PANTALLA = 1400;
+
+let foto = null;      // canvas con la foto original (reducida)
+let esquinas = null;  // [sup-izq, sup-der, inf-der, inf-izq] en píxeles de la foto
+let enderezada = null; // canvas tras corregir la perspectiva
+let limpia = null;    // canvas en blanco y negro
+let puntos = [];      // puntos de calibración en píxeles de la imagen final
+
+function mostrar(id) {
+  for (const s of document.querySelectorAll('.paso')) s.classList.toggle('oculto', s.id !== id);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function lienzo(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function posEnLienzo(cv, e) {
+  const r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height, k: cv.width / r.width };
+}
+
+// --- Dirección para el móvil -------------------------------------------------
+fetch('/api/estado').then((r) => r.json()).then((d) => {
+  // Solo el propio PC recibe el enlace con la clave, para abrirlo en el móvil.
+  if (d.enlaceMovil) $('movil').textContent = 'Desde el móvil, en la misma wifi, abre: ' + d.enlaceMovil;
+}).catch(() => {});
+
+// Instalable como aplicación (pantalla de inicio del móvil o la tablet).
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
+// --- Paso 1: cargar la foto ---------------------------------------------------
+function cargar(fichero) {
+  if (!fichero) return;
+  const url = URL.createObjectURL(fichero);
+  const img = new Image();
+  img.onload = () => {
+    const k = Math.min(1, MAX_FOTO / Math.max(img.naturalWidth, img.naturalHeight));
+    foto = lienzo(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k));
+    foto.getContext('2d').drawImage(img, 0, 0, foto.width, foto.height);
+    URL.revokeObjectURL(url);
+    // Solo se propone el nombre del fichero si parece puesto por una persona.
+    const base = fichero.name.replace(/\.[^.]+$/, '');
+    const automatico = !base || /^(image|img|photo|foto|dsc|pxl|whatsapp|screenshot|captura|signal|wp)/i.test(base) ||
+      /^[0-9a-f_-]{10,}$/i.test(base) || (base.match(/\d/g) || []).length > base.length / 2;
+    $('nombre').value = automatico ? '' : base;
+    esquinasPorDefecto();
+    mostrar('p2');
+    dibujarEsquinas();
+  };
+  img.onerror = () => alert('No se ha podido abrir esa imagen.');
+  img.src = url;
+}
+$('foto').onchange = (e) => { cargar(e.target.files[0]); e.target.value = ''; };
+$('archivo').onchange = (e) => { cargar(e.target.files[0]); e.target.value = ''; };
+
+// --- Paso 2: esquinas ---------------------------------------------------------
+const cvEsq = $('cvEsq');
+let arrastrando = -1;
+let escalaPantalla = 1;
+
+function esquinasPorDefecto(margen = 0.06) {
+  const w = foto.width, h = foto.height, mx = w * margen, my = h * margen;
+  esquinas = [[mx, my], [w - mx, my], [w - mx, h - my], [mx, h - my]];
+}
+function dibujarEsquinas() {
+  escalaPantalla = Math.min(1, MAX_PANTALLA / Math.max(foto.width, foto.height));
+  cvEsq.width = Math.round(foto.width * escalaPantalla);
+  cvEsq.height = Math.round(foto.height * escalaPantalla);
+  const g = cvEsq.getContext('2d');
+  const k = cvEsq.width / (cvEsq.getBoundingClientRect().width || cvEsq.width);
+  g.drawImage(foto, 0, 0, cvEsq.width, cvEsq.height);
+  const p = esquinas.map(([x, y]) => [x * escalaPantalla, y * escalaPantalla]);
+  // Oscurece lo que queda fuera de la zona elegida.
+  g.save();
+  g.beginPath(); g.rect(0, 0, cvEsq.width, cvEsq.height);
+  g.moveTo(...p[0]); for (let i = 3; i >= 1; i--) g.lineTo(...p[i]); g.closePath();
+  g.fillStyle = 'rgba(0,0,0,.45)'; g.fill('evenodd');
+  g.restore();
+  g.beginPath(); g.moveTo(...p[0]); for (const q of p.slice(1)) g.lineTo(...q); g.closePath();
+  g.lineWidth = 3 * k; g.strokeStyle = '#2196f3'; g.stroke();
+  for (const [x, y] of p) {
+    g.beginPath(); g.arc(x, y, 16 * k, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(33,150,243,.35)'; g.fill(); g.lineWidth = 3 * k; g.strokeStyle = '#fff'; g.stroke();
+  }
+  if (arrastrando >= 0) lupa(g, p[arrastrando], k);
+}
+// Lupa para colocar la esquina con precisión aunque el dedo la tape.
+function lupa(g, [x, y], k) {
+  const tam = 150 * k, zoom = 3;
+  const izquierda = x > cvEsq.width / 2 || y > cvEsq.height / 2 ? 10 * k : cvEsq.width - tam - 10 * k;
+  const arriba = 10 * k;
+  const fuente = tam / zoom / escalaPantalla;
+  g.save();
+  g.beginPath(); g.rect(izquierda, arriba, tam, tam); g.clip();
+  g.drawImage(foto, x / escalaPantalla - fuente / 2, y / escalaPantalla - fuente / 2, fuente, fuente, izquierda, arriba, tam, tam);
+  g.strokeStyle = '#f33'; g.lineWidth = 2 * k;
+  g.beginPath(); g.moveTo(izquierda + tam / 2, arriba); g.lineTo(izquierda + tam / 2, arriba + tam);
+  g.moveTo(izquierda, arriba + tam / 2); g.lineTo(izquierda + tam, arriba + tam / 2); g.stroke();
+  g.restore();
+  g.strokeStyle = '#fff'; g.lineWidth = 3 * k; g.strokeRect(izquierda, arriba, tam, tam);
+}
+cvEsq.addEventListener('pointerdown', (e) => {
+  const { x, y, k } = posEnLienzo(cvEsq, e);
+  let mejor = -1, dist = 45 * k;
+  esquinas.forEach(([ex, ey], i) => {
+    const d = Math.hypot(ex * escalaPantalla - x, ey * escalaPantalla - y);
+    if (d < dist) { dist = d; mejor = i; }
+  });
+  if (mejor >= 0) { arrastrando = mejor; cvEsq.setPointerCapture(e.pointerId); dibujarEsquinas(); }
+});
+cvEsq.addEventListener('pointermove', (e) => {
+  if (arrastrando < 0) return;
+  const { x, y } = posEnLienzo(cvEsq, e);
+  esquinas[arrastrando] = [
+    Math.max(0, Math.min(foto.width, x / escalaPantalla)),
+    Math.max(0, Math.min(foto.height, y / escalaPantalla)),
+  ];
+  dibujarEsquinas();
+});
+const soltar = () => { if (arrastrando >= 0) { arrastrando = -1; dibujarEsquinas(); } };
+cvEsq.addEventListener('pointerup', soltar);
+cvEsq.addEventListener('pointercancel', soltar);
+window.addEventListener('resize', () => { if (foto && !$('p2').classList.contains('oculto')) dibujarEsquinas(); });
+
+$('todo').onclick = () => { esquinasPorDefecto(0); dibujarEsquinas(); };
+$('otraFoto').onclick = () => mostrar('p1');
+$('girar').onclick = () => {
+  const g = lienzo(foto.height, foto.width);
+  const c = g.getContext('2d');
+  c.translate(g.width, 0); c.rotate(Math.PI / 2); c.drawImage(foto, 0, 0);
+  foto = g; esquinasPorDefecto(); dibujarEsquinas();
+};
+
+// Homografía que lleva el rectángulo de salida a las cuatro esquinas de la foto.
+function homografia(destino, origen) {
+  const A = [];
+  for (let i = 0; i < 4; i++) {
+    const [u, v] = destino[i], [x, y] = origen[i];
+    A.push([u, v, 1, 0, 0, 0, -u * x, -v * x, x]);
+    A.push([0, 0, 0, u, v, 1, -u * y, -v * y, y]);
+  }
+  for (let c = 0; c < 8; c++) {
+    let m = c;
+    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[m][c])) m = r;
+    [A[c], A[m]] = [A[m], A[c]];
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue;
+      const f = A[r][c] / A[c][c];
+      for (let k = c; k < 9; k++) A[r][k] -= f * A[c][k];
+    }
+  }
+  return A.map((fila, i) => fila[8] / fila[i]).concat(1);
+}
+function enderezar() {
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const [a, b, c, e] = esquinas;
+  let W = Math.max(d(a, b), d(e, c)), H = Math.max(d(a, e), d(b, c));
+  if (W < 20 || H < 20) { alert('La zona marcada es demasiado pequeña.'); return null; }
+  if ($('formato').value === 'din') {
+    // La perspectiva deforma la proporción; en una hoja DIN A es exactamente raíz de 2.
+    if (W >= H) H = W / Math.SQRT2; else W = H / Math.SQRT2;
+  }
+  const k = Math.min(2, LADO_SALIDA / Math.max(W, H));
+  W = Math.round(W * k); H = Math.round(H * k);
+  const h = homografia([[0, 0], [W, 0], [W, H], [0, H]], esquinas);
+  const sw = foto.width, sh = foto.height;
+  const s = foto.getContext('2d').getImageData(0, 0, sw, sh).data;
+  const out = lienzo(W, H);
+  const datos = out.getContext('2d').createImageData(W, H);
+  const o = datos.data;
+  for (let v = 0; v < H; v++) {
+    for (let u = 0; u < W; u++) {
+      const z = h[6] * (u + .5) + h[7] * (v + .5) + 1;
+      const x = (h[0] * (u + .5) + h[1] * (v + .5) + h[2]) / z - .5;
+      const y = (h[3] * (u + .5) + h[4] * (v + .5) + h[5]) / z - .5;
+      const x0 = Math.max(0, Math.min(sw - 2, Math.floor(x))), y0 = Math.max(0, Math.min(sh - 2, Math.floor(y)));
+      const fx = Math.max(0, Math.min(1, x - x0)), fy = Math.max(0, Math.min(1, y - y0));
+      const i00 = (y0 * sw + x0) * 4, i10 = i00 + 4, i01 = i00 + sw * 4, i11 = i01 + 4;
+      const j = (v * W + u) * 4;
+      for (let ch = 0; ch < 3; ch++) {
+        o[j + ch] = (s[i00 + ch] * (1 - fx) + s[i10 + ch] * fx) * (1 - fy) + (s[i01 + ch] * (1 - fx) + s[i11 + ch] * fx) * fy;
+      }
+      o[j + 3] = 255;
+    }
+  }
+  out.getContext('2d').putImageData(datos, 0, 0);
+  return out;
+}
+$('enderezar').onclick = () => {
+  const boton = $('enderezar');
+  boton.disabled = true; boton.textContent = 'Enderezando…';
+  setTimeout(() => {
+    try {
+      const r = enderezar();
+      if (r) { enderezada = r; puntos = []; mostrar('p3'); limpiar(); }
+    } finally { boton.disabled = false; boton.textContent = 'Enderezar y seguir'; }
+  }, 30);
+};
+
+// --- Paso 3: limpieza con umbral adaptativo -----------------------------------
+const cvLimpio = $('cvLimpio');
+function limpiar() {
+  const W = enderezada.width, H = enderezada.height;
+  if ($('sinLimpiar').checked) { limpia = enderezada; return dibujarLimpia(); }
+  const d = enderezada.getContext('2d').getImageData(0, 0, W, H).data;
+  const gris = new Float32Array(W * H);
+  for (let i = 0, j = 0; i < gris.length; i++, j += 4) gris[i] = .299 * d[j] + .587 * d[j + 1] + .114 * d[j + 2];
+  // Imagen integral para calcular la media local en tiempo constante.
+  const W1 = W + 1, integral = new Float64Array(W1 * (H + 1));
+  for (let y = 0; y < H; y++) {
+    let fila = 0;
+    for (let x = 0; x < W; x++) {
+      fila += gris[y * W + x];
+      integral[(y + 1) * W1 + x + 1] = integral[y * W1 + x + 1] + fila;
+    }
+  }
+  const mitad = Math.max(2, Math.round(Math.max(W, H) * $('ventana').value / 1000 / 2));
+  const t = 1 - $('sens').value / 100;
+  // El borde de la hoja suele coger un poco de mesa o de sombra: se deja en blanco.
+  const margen = Math.max(4, Math.round(Math.max(W, H) * 0.006));
+  const negro = new Uint8Array(W * H);
+  for (let y = margen; y < H - margen; y++) {
+    const y1 = Math.max(0, y - mitad), y2 = Math.min(H, y + mitad + 1);
+    for (let x = margen; x < W - margen; x++) {
+      const x1 = Math.max(0, x - mitad), x2 = Math.min(W, x + mitad + 1);
+      const suma = integral[y2 * W1 + x2] - integral[y1 * W1 + x2] - integral[y2 * W1 + x1] + integral[y1 * W1 + x1];
+      const media = suma / ((x2 - x1) * (y2 - y1));
+      if (gris[y * W + x] < media * t) negro[y * W + x] = 1;
+    }
+  }
+  if ($('motas').checked) quitarMotas(negro, W, H, Math.max(6, Math.round((Math.max(W, H) / 600) ** 2)));
+  limpia = lienzo(W, H);
+  const datos = limpia.getContext('2d').createImageData(W, H);
+  const o = datos.data;
+  for (let i = 0, j = 0; i < negro.length; i++, j += 4) {
+    const v = negro[i] ? 0 : 255;
+    o[j] = o[j + 1] = o[j + 2] = v; o[j + 3] = 255;
+  }
+  limpia.getContext('2d').putImageData(datos, 0, 0);
+  dibujarLimpia();
+}
+// Borra las manchas negras sueltas más pequeñas que minimo píxeles (polvo, grano del papel).
+function quitarMotas(negro, W, H, minimo) {
+  const visto = new Uint8Array(W * H);
+  const pila = new Int32Array(W * H);
+  const grupo = [];
+  for (let inicio = 0; inicio < negro.length; inicio++) {
+    if (!negro[inicio] || visto[inicio]) continue;
+    let tope = 0; pila[tope++] = inicio; visto[inicio] = 1; grupo.length = 0;
+    while (tope) {
+      const p = pila[--tope]; grupo.push(p);
+      const x = p % W, y = (p - x) / W;
+      if (x > 0 && negro[p - 1] && !visto[p - 1]) { visto[p - 1] = 1; pila[tope++] = p - 1; }
+      if (x < W - 1 && negro[p + 1] && !visto[p + 1]) { visto[p + 1] = 1; pila[tope++] = p + 1; }
+      if (y > 0 && negro[p - W] && !visto[p - W]) { visto[p - W] = 1; pila[tope++] = p - W; }
+      if (y < H - 1 && negro[p + W] && !visto[p + W]) { visto[p + W] = 1; pila[tope++] = p + W; }
+    }
+    if (grupo.length < minimo) for (const p of grupo) negro[p] = 0;
+  }
+}
+let reloj = 0;
+const limpiarLuego = () => { clearTimeout(reloj); reloj = setTimeout(limpiar, 120); };
+$('sens').oninput = limpiarLuego;
+$('ventana').oninput = limpiarLuego;
+$('sinLimpiar').onchange = limpiar;
+$('motas').onchange = limpiar;
+
+function dibujarLimpia() {
+  const k = Math.min(1, MAX_PANTALLA / Math.max(limpia.width, limpia.height));
+  cvLimpio.width = Math.round(limpia.width * k);
+  cvLimpio.height = Math.round(limpia.height * k);
+  cvLimpio.getContext('2d').drawImage(limpia, 0, 0, cvLimpio.width, cvLimpio.height);
+}
+$('aDatos').onclick = () => { mostrar('p4'); dibujarMedida(); };
+
+// --- Paso 4: datos del plano ---------------------------------------------------
+document.querySelectorAll('.info').forEach((b) => {
+  b.onclick = (e) => { e.preventDefault(); $(b.dataset.ayuda).classList.toggle('oculto'); b.classList.toggle('activo'); };
+});
+const tipoElegido = () => document.querySelector('input[name=tipo]:checked').value;
+const murosElegidos = () => document.querySelector('input[name=muros]:checked').value;
+document.querySelectorAll('input[name=tipo]').forEach((r) => {
+  r.onchange = () => {
+    $('bloqueMuros').classList.toggle('oculto', tipoElegido() !== 'plano');
+    $('bloqueTrazo').classList.toggle('oculto', tipoElegido() === 'plano');
+    infoCalibracion();
+  };
+});
+
+const cvMedida = $('cvMedida');
+function dibujarMedida() {
+  const k = Math.min(1, MAX_PANTALLA / Math.max(limpia.width, limpia.height));
+  cvMedida.width = Math.round(limpia.width * k);
+  cvMedida.height = Math.round(limpia.height * k);
+  const g = cvMedida.getContext('2d');
+  const kk = cvMedida.width / (cvMedida.getBoundingClientRect().width || cvMedida.width);
+  g.drawImage(limpia, 0, 0, cvMedida.width, cvMedida.height);
+  const p = puntos.map(([x, y]) => [x * k, y * k]);
+  if (p.length === 2) {
+    g.beginPath(); g.moveTo(...p[0]); g.lineTo(...p[1]);
+    g.lineWidth = 4 * kk; g.strokeStyle = '#e53935'; g.stroke();
+  }
+  for (const [x, y] of p) {
+    g.beginPath(); g.arc(x, y, 9 * kk, 0, Math.PI * 2);
+    g.fillStyle = '#e53935'; g.fill(); g.lineWidth = 2 * kk; g.strokeStyle = '#fff'; g.stroke();
+  }
+  infoCalibracion();
+}
+cvMedida.addEventListener('pointerdown', (e) => {
+  const { x, y } = posEnLienzo(cvMedida, e);
+  const k = limpia.width / cvMedida.width;
+  if (puntos.length >= 2) puntos = [];
+  puntos.push([x * k, y * k]);
+  dibujarMedida();
+  if (puntos.length === 2 && !$('real').value) $('real').focus();
+});
+$('borrarCal').onclick = () => { puntos = []; dibujarMedida(); };
+$('real').oninput = infoCalibracion;
+$('unidad').onchange = infoCalibracion;
+const medidaReal = () => parseFloat(String($('real').value).replace(',', '.'));
+function distanciaPx() { return puntos.length === 2 ? Math.hypot(puntos[0][0] - puntos[1][0], puntos[0][1] - puntos[1][1]) : 0; }
+function infoCalibracion() {
+  const linea = $('estadoLinea'), info = $('calInfo'), real = medidaReal();
+  if (puntos.length === 0) linea.innerHTML = '<span class="pendiente">Sin línea marcada.</span>';
+  else if (puntos.length === 1) linea.innerHTML = '<span class="pendiente">Falta el segundo extremo: tócalo en el dibujo.</span>';
+  else linea.innerHTML = '<span class="ok">Línea marcada.</span> Si no es la buena, toca de nuevo o pulsa «Borrar la línea».';
+  const sinMedida = tipoElegido() === 'plano'
+    ? 'Sin medida, la escala se calculará suponiendo que las puertas miden 80 cm. Es aproximada.'
+    : 'Sin medida, el dibujo saldrá con el tamaño de la hoja y tendrás que escalarlo en AutoCAD.';
+  if (puntos.length === 2 && real > 0) info.innerHTML = `<span class="ok">Escala lista.</span> El plano saldrá a tamaño real, en ${$('unidad').selectedOptions[0].text}.`;
+  else if (puntos.length === 2) info.innerHTML = '<span class="pendiente">Escribe cuánto mide la línea roja.</span>';
+  else if (real > 0) info.innerHTML = '<span class="pendiente">Has escrito la medida, pero falta marcar la línea en el dibujo.</span>';
+  else info.textContent = sinMedida;
+}
+
+// --- Paso 5: convertir ---------------------------------------------------------
+$('convertir').onclick = async () => {
+  const px = distanciaPx(), real = medidaReal();
+  if (px && !(real > 0)) { alert('Escribe cuánto mide la línea roja, o pulsa «Borrar la línea».'); return; }
+  if (!px && real > 0 && !confirm('Has escrito una medida pero no has marcado la línea en el dibujo. ¿Convertir sin medida de referencia?')) return;
+  mostrar('p5');
+  $('vista').classList.add('oculto'); $('descargas').classList.add('oculto'); $('detalles').textContent = '';
+  $('estado').innerHTML = '<span class="ruedita"></span>Convirtiendo el plano. Suele tardar menos de un minuto…';
+  const q = new URLSearchParams({
+    name: $('nombre').value.trim() || 'plano', tipo: tipoElegido(), muros: murosElegidos(),
+    preset: $('preset').value, unit: $('unidad').value,
+  });
+  if (px) {
+    q.set('real', real);
+    q.set('x1', puntos[0][0]); q.set('y1', puntos[0][1]); q.set('x2', puntos[1][0]); q.set('y2', puntos[1][1]);
+  }
+  try {
+    const blob = await new Promise((ok) => limpia.toBlob(ok, 'image/png'));
+    const r = await fetch('/api/convertir?' + q, { method: 'POST', body: blob, headers: { 'Content-Type': 'image/png' } });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error ' + r.status);
+    $('estado').innerHTML = '<span class="ok">Plano convertido.</span>';
+    $('vista').src = d.vista + '?t=' + Date.now(); $('vista').classList.remove('oculto');
+    $('bajarDwg').href = d.dwg; $('bajarDxf').href = d.dxf; $('descargas').classList.remove('oculto');
+    const unidades = { m: 'metros', cm: 'centímetros', mm: 'milímetros' }[d.unidad];
+    const escala = {
+      medida: `Escala real según tu medida, en ${unidades}.`,
+      puertas: `Escala estimada suponiendo puertas de 80 cm, en ${unidades}. Comprueba una medida en AutoCAD.`,
+      ninguna: 'Sin escala: en AutoCAD usa ESCALA con la opción Referencia sobre una medida conocida.',
+    }[d.escala];
+    let html = escala;
+    if (d.tipo === 'plano') {
+      const s = d.resumen;
+      html = `<b>Reconocido:</b> ${s.muros} tramos de muro, ${s.puertas} puertas, ${s.ventanas} ventanas y ${s.huecos} huecos de paso.<br>` + html +
+        '<br><b>Capas en AutoCAD:</b> MUROS y MUROS-RELLENO, PUERTAS y VENTANAS como bloques, COTAS, TEXTO-A-MANO para repasar los textos, DETALLES para el mobiliario y REVISAR para lo que no se ha entendido.';
+    }
+    for (const a of d.avisos || []) html += `<br><span class="pendiente">${a}</span>`;
+    html += `<br><small>También se ha guardado en el PC, en ${d.carpeta}</small>`;
+    $('detalles').innerHTML = html;
+  } catch (err) {
+    $('estado').innerHTML = '<span class="error">No se ha podido convertir.</span> ' + String(err.message || err).slice(0, 300);
+  }
+};
+$('ajustar').onclick = () => { mostrar('p4'); dibujarMedida(); };
+$('nuevo').onclick = () => { $('nombre').value = ''; puntos = []; mostrar('p1'); };
+</script>
+</body>
+</html>
