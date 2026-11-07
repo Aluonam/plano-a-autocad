@@ -383,6 +383,26 @@ function simplificar(pts, eps) {
   }
   return pts.filter((_, k) => guardar[k]);
 }
+// Ortogonalizar, como el modo orto de AutoCAD: los tramos casi horizontales o casi verticales pasan a serlo del todo.
+// Cada vértice toma la Y de su tramo horizontal y la X de su tramo vertical, así que las esquinas siguen unidas.
+function ortogonalizar(pts, tolerancia = 8) {
+  if (pts.length < 2) return pts;
+  const n = pts.length, cerrada = n > 2 && pts[0][0] === pts[n - 1][0] && pts[0][1] === pts[n - 1][1];
+  const fijaX = pts.map(() => []), fijaY = pts.map(() => []);
+  for (let k = 1; k < n; k++) {
+    const a = pts[k - 1], b = pts[k], ang = Math.atan2(Math.abs(b[1] - a[1]), Math.abs(b[0] - a[0])) * 180 / Math.PI;
+    if (ang <= tolerancia) { const y = (a[1] + b[1]) / 2; fijaY[k - 1].push(y); fijaY[k].push(y); }
+    else if (ang >= 90 - tolerancia) { const x = (a[0] + b[0]) / 2; fijaX[k - 1].push(x); fijaX[k].push(x); }
+  }
+  if (cerrada) { fijaX[0].push(...fijaX[n - 1]); fijaY[0].push(...fijaY[n - 1]); fijaX[n - 1] = fijaX[0]; fijaY[n - 1] = fijaY[0]; }
+  const media = (l, d) => (l.length ? l.reduce((t, v) => t + v, 0) / l.length : d);
+  const out = [];
+  pts.forEach((p, i) => {
+    const q = [media(fijaX[i], p[0]), media(fijaY[i], p[1])], u = out[out.length - 1];
+    if (!u || Math.abs(u[0] - q[0]) > 1e-6 || Math.abs(u[1] - q[1]) > 1e-6) out.push(q);
+  });
+  return out.length >= 2 ? out : pts;
+}
 function longitud(pts) { let s = 0; for (let k = 1; k < pts.length; k++) s += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]); return s; }
 
 // ---------------------------------------------------------------- reconocimiento
@@ -842,7 +862,8 @@ function reconocerMascara(imagen, opciones = {}) {
     const [x, y] = camino[0].map(Math.floor), c = comp[y * W + x];
     const capa = c >= 0 ? comps[c].capa : 'DETALLES';
     if (!capa) continue;
-    const pts = simplificar(camino, Math.max(0.9, 0.18 * grueso));
+    let pts = simplificar(camino, Math.max(0.9, 0.18 * grueso));
+    if (capa === 'DETALLES' || capa === 'REVISAR') pts = ortogonalizar(pts);
     if (longitud(pts) < Math.max(2, 0.5 * grueso) && capa !== 'TEXTO-A-MANO') continue;
     lineas.push({ capa, pts });
   }

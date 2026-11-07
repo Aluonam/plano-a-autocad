@@ -10,12 +10,14 @@ Funciona entera en la tablet: la foto no se sube a ningún sitio y, una vez inst
 ## Cómo se usa
 
 1. **Foto**: haz la foto del plano con la tablet, o abre una imagen o un escaneo.
-2. **Esquinas**: arrastra los pinzamientos a las esquinas de la hoja; la foto se endereza.
+2. **Esquinas**: arrastra los pinzamientos a las esquinas de la hoja; la foto se endereza. Si un borde sale curvado
+   (papel abombado o la lente del móvil), lleva su rombo central al borde real y también se endereza.
 3. **Limpieza**: ajusta hasta que las líneas se vean limpias.
 4. **Datos**: elige el tipo de dibujo, toca los dos extremos de una medida conocida y escribe cuánto mide.
 5. **Resultado**: «Abrir en CADCraft» lo abre dentro de la propia aplicación para revisarlo, editarlo y guardarlo
    en DWG o DXF. También puedes «Compartir DXF» o «Guardar DXF» para llevarlo a AutoCAD u otro programa.
-6. **Corregir**: si algo no se ha reconocido bien, pinta encima con el rotulador de Muro, Puerta, Ventana o Pilar,
+6. **Comparar con la foto**: muestra la foto enderezada en naranja debajo del dibujo, para ver qué falta.
+7. **Corregir**: si algo no se ha reconocido bien, pinta encima con el rotulador de Muro, Puerta, Ventana o Pilar,
    o con Borrar para que se ignore, y pulsa «Aplicar correcciones».
 
 [CADCraft](https://github.com/storytold/cadcraft) es un programa de CAD de código libre (MIT o Apache-2.0). Va

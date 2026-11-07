@@ -149,7 +149,7 @@
     <div class="panel oculto" data-p="p2">
       <div class="titulo">Esquinas de la hoja <button class="info" data-ayuda="ayEsquinas" aria-label="Más información">i</button></div>
       <div class="grupo">
-        <p class="explica oculto" id="ayEsquinas">Arrastra los cuatro pinzamientos azules a las esquinas de la hoja: la foto se endereza como si estuviera escaneada. Al arrastrar aparece una lupa. Si la imagen ya está recta y recortada, pulsa «Foto entera».</p>
+        <p class="explica oculto" id="ayEsquinas">Arrastra los cuatro pinzamientos cuadrados a las esquinas de la hoja: la foto se endereza como si estuviera escaneada. Si un borde de la hoja sale curvado (papel abombado o la lente del móvil), lleva su rombo central hasta el borde real: al enderezar, la curva pasa a ser recta y con ella todo el dibujo. «Bordes rectos» lo deshace. Al arrastrar aparece una lupa.</p>
         <h3>Tamaño de la hoja <button class="info" data-ayuda="ayFormato" aria-label="Más información">i</button></h3>
         <p class="explica oculto" id="ayFormato">Si has marcado una hoja DIN A completa (A4, A3, A2…), su proporción se corrige con exactitud aunque la foto esté inclinada. Si es otro papel o solo una parte, elige «Otro tamaño».</p>
         <select id="formato">
@@ -157,6 +157,7 @@
           <option value="auto">Otro tamaño o una parte</option>
         </select>
         <div class="fila"><button id="todo">Foto entera</button><button id="girar">Girar 90°</button></div>
+        <button class="bloque" id="bordesRectos">Bordes rectos</button>
         <button class="bloque" id="otraFoto">Otra foto</button>
         <button class="principal bloque" id="enderezar">Enderezar</button>
       </div>
@@ -219,6 +220,12 @@
         <a class="btn bloque oculto" id="guardar">Guardar DXF</a>
         <p class="nota" style="margin-top:8px" id="ayudaGuardar"></p>
       </div>
+      <div class="grupo oculto" id="grupoComparar">
+        <h3>Comparar con la foto <button class="info" data-ayuda="ayComparar" aria-label="Más información">i</button></h3>
+        <p class="explica oculto" id="ayComparar">Muestra la foto enderezada, en naranja, debajo del dibujo reconocido. Coinciden punto por punto: lo que se ve en naranja sin dibujo encima es lo que falta o se ha desviado, y puedes corregirlo encima con los rotuladores de «Corregir».</p>
+        <label class="rango">Foto debajo del dibujo<input type="range" id="opacidadFoto" min="0" max="100" value="0"></label>
+        <div class="fila"><button id="verFoto">Ver foto</button><button id="soloDibujo">Solo dibujo</button></div>
+      </div>
       <div class="grupo oculto" id="grupoCorregir">
         <h3>Corregir <button class="info" data-ayuda="ayCorregir" aria-label="Más información">i</button></h3>
         <p class="explica oculto" id="ayCorregir">Si algo no se ha reconocido bien, elige una herramienta, pinta encima en el dibujo y pulsa «Aplicar correcciones». <b>Muro</b>: lo pintado pasa a ser muro. <b>Puerta</b> o <b>Ventana</b>: pinta sobre el hueco o el tramo de muro donde va. <b>Pilar</b>: pinta sobre el poste. <b>Borrar</b>: lo pintado se ignora (manchas, textos que estorban, una ventana que no lo es). Las marcas se guardan hasta que empieces otro plano.</p>
@@ -264,7 +271,7 @@ let foto = null, esquinas = null, enderezada = null, limpia = null, puntos = [],
 
 const COMANDOS = {
   p1: 'NUEVO  Haz una foto del plano o abre una imagen.',
-  p2: 'ESQUINAS  Arrastra los pinzamientos a las esquinas de la hoja y pulsa Enderezar.',
+  p2: 'ESQUINAS  Lleve los pinzamientos a las esquinas y, si un borde se curva, su rombo central al borde real.',
   p3: 'LIMPIAR  Deja las líneas claras y el papel vacío, y pulsa Seguir.',
   p4: 'MEDIDA  Precise el primer punto de una medida conocida:',
   p5: 'DXF',
@@ -320,37 +327,58 @@ function cargar(fichero) {
 $('foto').onchange = (e) => { cargar(e.target.files[0]); e.target.value = ''; };
 $('archivo').onchange = (e) => { cargar(e.target.files[0]); e.target.value = ''; };
 
-// --- 2. Esquinas ----------------------------------------------------------------
+// --- 2. Esquinas y bordes de la hoja ------------------------------------------------
 const cvEsq = $('cvEsq');
 let arrastrando = -1, escalaPantalla = 1;
+// Pinzamiento en mitad de cada borde (0 arriba, 1 derecha, 2 abajo, 3 izquierda). null = borde recto: sigue a las esquinas.
+let medios = [null, null, null, null];
 function esquinasPorDefecto(margen = 0.06) {
   const w = foto.width, h = foto.height, mx = w * margen, my = h * margen;
   esquinas = [[mx, my], [w - mx, my], [w - mx, h - my], [mx, h - my]];
+  medios = [null, null, null, null];
+}
+const aplicarH = (h, u, v) => { const z = h[6] * u + h[7] * v + 1; return [(h[0] * u + h[1] * v + h[2]) / z, (h[3] * u + h[4] * v + h[5]) / z]; };
+const MEDIOS_UNIDAD = [[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]];
+// Mitad real de cada lado de la hoja vista en perspectiva, o donde se haya llevado su pinzamiento.
+function mediosActuales() {
+  const hU = homografia([[0, 0], [1, 0], [1, 1], [0, 1]], esquinas);
+  return MEDIOS_UNIDAD.map(([u, v], i) => medios[i] || aplicarH(hU, u, v));
+}
+const pinzamientos = () => [...esquinas, ...mediosActuales()]; // 0-3 esquinas, 4-7 puntos medios
+// Cada borde se dibuja como la curva que pasa por sus dos esquinas y su punto medio.
+function trazarBorde(g, p, m) {
+  g.moveTo(...p[0]);
+  for (let i = 0; i < 4; i++) {
+    const a = p[i], b = p[(i + 1) % 4], c = m[i];
+    g.quadraticCurveTo(2 * c[0] - (a[0] + b[0]) / 2, 2 * c[1] - (a[1] + b[1]) / 2, b[0], b[1]);
+  }
+  g.closePath();
 }
 function dibujarEsquinas() {
   escalaPantalla = Math.min(1, MAX_PANTALLA / Math.max(foto.width, foto.height));
   cvEsq.width = Math.round(foto.width * escalaPantalla);
   cvEsq.height = Math.round(foto.height * escalaPantalla);
-  const g = cvEsq.getContext('2d'), k = factorPantalla(cvEsq);
+  const g = cvEsq.getContext('2d'), k = factorPantalla(cvEsq), e = escalaPantalla;
   g.drawImage(foto, 0, 0, cvEsq.width, cvEsq.height);
-  const p = esquinas.map(([x, y]) => [x * escalaPantalla, y * escalaPantalla]);
+  const p = esquinas.map(([x, y]) => [x * e, y * e]), m = mediosActuales().map(([x, y]) => [x * e, y * e]);
   g.save();
-  g.beginPath(); g.rect(0, 0, cvEsq.width, cvEsq.height);
-  g.moveTo(...p[0]); for (let i = 3; i >= 1; i--) g.lineTo(...p[i]); g.closePath();
+  g.beginPath(); g.rect(0, 0, cvEsq.width, cvEsq.height); trazarBorde(g, p, m);
   g.fillStyle = 'rgba(20,24,30,.6)'; g.fill('evenodd');
   g.restore();
-  g.beginPath(); g.moveTo(...p[0]); for (const q of p.slice(1)) g.lineTo(...q); g.closePath();
+  g.beginPath(); trazarBorde(g, p, m);
   g.setLineDash([8 * k, 5 * k]); g.lineWidth = 2 * k; g.strokeStyle = '#4fb3ff'; g.stroke(); g.setLineDash([]);
-  // Pinzamientos cuadrados, como en AutoCAD: azules, y rojo el que se está moviendo.
-  p.forEach(([x, y], i) => {
-    const s = 13 * k;
-    g.fillStyle = i === arrastrando ? '#e5484d' : '#1e6fff';
-    g.fillRect(x - s / 2, y - s / 2, s, s);
-    g.lineWidth = 1.5 * k; g.strokeStyle = '#fff'; g.strokeRect(x - s / 2, y - s / 2, s, s);
+  // Pinzamientos como en AutoCAD: cuadrados en las esquinas, rombos en los puntos medios; rojo el que se mueve.
+  [...p, ...m].forEach(([x, y], i) => {
+    const s = (i < 4 ? 13 : 11) * k;
+    g.save(); g.translate(x, y); if (i >= 4) g.rotate(Math.PI / 4);
+    g.fillStyle = i === arrastrando ? '#e5484d' : (i < 4 || medios[i - 4] ? '#1e6fff' : '#3f7fd8');
+    g.fillRect(-s / 2, -s / 2, s, s);
+    g.lineWidth = 1.5 * k; g.strokeStyle = '#fff'; g.strokeRect(-s / 2, -s / 2, s, s);
+    g.restore();
   });
-  if (arrastrando >= 0) lupa(g, p[arrastrando], k);
+  if (arrastrando >= 0) lupa(g, [...p, ...m][arrastrando], k);
 }
-// Lupa para colocar la esquina con precisión aunque el dedo la tape.
+// Lupa para colocar el pinzamiento con precisión aunque el dedo lo tape.
 function lupa(g, [x, y], k) {
   const tam = 150 * k, zoom = 3;
   const izquierda = x > cvEsq.width / 2 || y > cvEsq.height / 2 ? 10 * k : cvEsq.width - tam - 10 * k;
@@ -367,26 +395,31 @@ function lupa(g, [x, y], k) {
 cvEsq.addEventListener('pointerdown', (e) => {
   const { x, y, k } = posEnLienzo(cvEsq, e);
   let mejor = -1, dist = 45 * k;
-  esquinas.forEach(([ex, ey], i) => { const d = Math.hypot(ex * escalaPantalla - x, ey * escalaPantalla - y); if (d < dist) { dist = d; mejor = i; } });
-  if (mejor >= 0) { arrastrando = mejor; cvEsq.setPointerCapture(e.pointerId); dibujarEsquinas(); }
+  pinzamientos().forEach(([px, py], i) => { const d = Math.hypot(px * escalaPantalla - x, py * escalaPantalla - y); if (d < dist) { dist = d; mejor = i; } });
+  if (mejor < 0) return;
+  // Al coger un punto medio por primera vez, los demás quedan fijos donde están.
+  if (mejor >= 4) { const actuales = mediosActuales(); medios = medios.map((m, i) => (i === mejor - 4 ? actuales[i] : m)); }
+  arrastrando = mejor; cvEsq.setPointerCapture(e.pointerId); dibujarEsquinas();
 });
 cvEsq.addEventListener('pointermove', (e) => {
   if (arrastrando < 0) return;
   const { x, y } = posEnLienzo(cvEsq, e);
-  esquinas[arrastrando] = [Math.max(0, Math.min(foto.width, x / escalaPantalla)), Math.max(0, Math.min(foto.height, y / escalaPantalla))];
+  const pt = [Math.max(0, Math.min(foto.width, x / escalaPantalla)), Math.max(0, Math.min(foto.height, y / escalaPantalla))];
+  if (arrastrando < 4) esquinas[arrastrando] = pt; else medios[arrastrando - 4] = pt;
   dibujarEsquinas();
 });
 const soltar = () => { if (arrastrando >= 0) { arrastrando = -1; dibujarEsquinas(); } };
 cvEsq.addEventListener('pointerup', soltar);
 cvEsq.addEventListener('pointercancel', soltar);
 $('todo').onclick = () => { esquinasPorDefecto(0); dibujarEsquinas(); };
+$('bordesRectos').onclick = () => { medios = [null, null, null, null]; dibujarEsquinas(); };
 $('otraFoto').onclick = () => mostrar('p1');
 $('girar').onclick = () => {
   const g = lienzo(foto.height, foto.width), c = g.getContext('2d');
   c.translate(g.width, 0); c.rotate(Math.PI / 2); c.drawImage(foto, 0, 0);
   foto = g; esquinasPorDefecto(); dibujarEsquinas();
 };
-// Homografía que lleva el rectángulo de salida a las cuatro esquinas de la foto.
+// Homografía que lleva los cuatro puntos «destino» a los cuatro puntos «origen».
 function homografia(destino, origen) {
   const A = [];
   for (let i = 0; i < 4; i++) {
@@ -406,6 +439,8 @@ function homografia(destino, origen) {
   }
   return A.map((fila, i) => fila[8] / fila[i]).concat(1);
 }
+// Endereza la hoja: la perspectiva con las esquinas y, si algún borde se curva, también la curvatura
+// (parche de Coons: los cuatro bordes curvos pasan a ser los lados rectos del rectángulo de salida).
 function enderezar() {
   const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   const [a, b, c, e] = esquinas;
@@ -414,17 +449,35 @@ function enderezar() {
   if ($('formato').value === 'din') { if (W >= H) H = W / Math.SQRT2; else W = H / Math.SQRT2; }
   const k = Math.min(2, LADO_SALIDA / Math.max(W, H));
   W = Math.round(W * k); H = Math.round(H * k);
-  const h = homografia([[0, 0], [W, 0], [W, H], [0, H]], esquinas);
+  const R = [[0, 0], [W, 0], [W, H], [0, H]];
+  const h = homografia(R, esquinas), hInv = homografia(esquinas, R);
+  const recto = medios.every((m) => !m);
+  const M = mediosActuales().map(([x, y]) => aplicarH(hInv, x, y)); // puntos medios en el rectángulo de salida
+  const curva = (p0, pm, p1, t) => {
+    const a0 = (1 - t) * (1 - 2 * t), am = 4 * t * (1 - t), a1 = t * (2 * t - 1);
+    return [p0[0] * a0 + pm[0] * am + p1[0] * a1, p0[1] * a0 + pm[1] * am + p1[1] * a1];
+  };
   const sw = foto.width, sh = foto.height, s = foto.getContext('2d').getImageData(0, 0, sw, sh).data;
   const out = lienzo(W, H), datos = out.getContext('2d').createImageData(W, H), o = datos.data;
-  for (let v = 0; v < H; v++) for (let u = 0; u < W; u++) {
-    const z = h[6] * (u + .5) + h[7] * (v + .5) + 1;
-    const x = (h[0] * (u + .5) + h[1] * (v + .5) + h[2]) / z - .5, y = (h[3] * (u + .5) + h[4] * (v + .5) + h[5]) / z - .5;
-    const x0 = Math.max(0, Math.min(sw - 2, Math.floor(x))), y0 = Math.max(0, Math.min(sh - 2, Math.floor(y)));
-    const fx = Math.max(0, Math.min(1, x - x0)), fy = Math.max(0, Math.min(1, y - y0));
-    const i00 = (y0 * sw + x0) * 4, i10 = i00 + 4, i01 = i00 + sw * 4, i11 = i01 + 4, j = (v * W + u) * 4;
-    for (let ch = 0; ch < 3; ch++) o[j + ch] = (s[i00 + ch] * (1 - fx) + s[i10 + ch] * fx) * (1 - fy) + (s[i01 + ch] * (1 - fx) + s[i11 + ch] * fx) * fy;
-    o[j + 3] = 255;
+  for (let v = 0; v < H; v++) {
+    const tv = (v + .5) / H;
+    const izq = curva(R[0], M[3], R[3], tv), der = curva(R[1], M[1], R[2], tv);
+    for (let u = 0; u < W; u++) {
+      const tu = (u + .5) / W;
+      let X = u + .5, Y = v + .5;
+      if (!recto) {
+        const arr = curva(R[0], M[0], R[1], tu), aba = curva(R[3], M[2], R[2], tu);
+        X = (1 - tv) * arr[0] + tv * aba[0] + (1 - tu) * izq[0] + tu * der[0] - ((1 - tu) * (1 - tv) * R[0][0] + tu * (1 - tv) * R[1][0] + tu * tv * R[2][0] + (1 - tu) * tv * R[3][0]);
+        Y = (1 - tv) * arr[1] + tv * aba[1] + (1 - tu) * izq[1] + tu * der[1] - ((1 - tu) * (1 - tv) * R[0][1] + tu * (1 - tv) * R[1][1] + tu * tv * R[2][1] + (1 - tu) * tv * R[3][1]);
+      }
+      const z = h[6] * X + h[7] * Y + 1;
+      const x = (h[0] * X + h[1] * Y + h[2]) / z - .5, y = (h[3] * X + h[4] * Y + h[5]) / z - .5;
+      const x0 = Math.max(0, Math.min(sw - 2, Math.floor(x))), y0 = Math.max(0, Math.min(sh - 2, Math.floor(y)));
+      const fx = Math.max(0, Math.min(1, x - x0)), fy = Math.max(0, Math.min(1, y - y0));
+      const i00 = (y0 * sw + x0) * 4, i10 = i00 + 4, i01 = i00 + sw * 4, i11 = i01 + 4, j = (v * W + u) * 4;
+      for (let ch = 0; ch < 3; ch++) o[j + ch] = (s[i00 + ch] * (1 - fx) + s[i10 + ch] * fx) * (1 - fy) + (s[i01 + ch] * (1 - fx) + s[i11 + ch] * fx) * fy;
+      o[j + 3] = 255;
+    }
   }
   out.getContext('2d').putImageData(datos, 0, 0);
   return out;
@@ -633,6 +686,7 @@ function mostrarResultado(d, segundos) {
   $('escalaInfo').innerHTML = esc;
   $('grupoCapas').classList.remove('oculto');
   $('grupoCorregir').classList.remove('oculto');
+  $('grupoComparar').classList.remove('oculto');
   actualizarHerramientas();
   comando(`DXF  ${s.muros} muros, ${s.puertas} puertas, ${s.ventanas} ventanas. Pulse Compartir o Guardar.`);
 }
@@ -642,6 +696,7 @@ function dibujarModelo(m, k, u) {
   cvResultado.width = Math.round(m.W * esc); cvResultado.height = Math.round(m.H * esc);
   const g = cvResultado.getContext('2d'), kk = factorPantalla(cvResultado);
   g.fillStyle = '#212830'; g.fillRect(0, 0, cvResultado.width, cvResultado.height);
+  if (opacidadFoto > 0 && enderezada) { g.globalAlpha = opacidadFoto; g.drawImage(fotoParaComparar(), 0, 0, cvResultado.width, cvResultado.height); g.globalAlpha = 1; }
   g.save(); g.scale(esc, esc);
   const grosor = (px) => (px * kk) / esc;
   g.lineJoin = 'round'; g.lineCap = 'round';
@@ -687,6 +742,29 @@ function dibujarModelo(m, k, u) {
   baseResultado.getContext('2d').drawImage(cvResultado, 0, 0);
   pintarMarcas();
 }
+
+// --- Comparar con la foto -------------------------------------------------------------
+// La foto enderezada, con el papel oscuro y el trazo en naranja, para verla debajo del dibujo de CAD.
+let opacidadFoto = 0, fotoComparada = null, fotoComparadaDe = null;
+function fotoParaComparar() {
+  if (fotoComparadaDe === enderezada) return fotoComparada;
+  const W = enderezada.width, H = enderezada.height, d = enderezada.getContext('2d').getImageData(0, 0, W, H);
+  const p = d.data;
+  for (let j = 0; j < p.length; j += 4) {
+    const t = Math.pow(Math.max(0, 1 - (0.299 * p[j] + 0.587 * p[j + 1] + 0.114 * p[j + 2]) / 235), 0.8);
+    p[j] = 33 + (255 - 33) * t; p[j + 1] = 40 + (140 - 40) * t; p[j + 2] = 48 + (40 - 48) * t; p[j + 3] = 255;
+  }
+  fotoComparada = lienzo(W, H); fotoComparada.getContext('2d').putImageData(d, 0, 0); fotoComparadaDe = enderezada;
+  return fotoComparada;
+}
+function ponerOpacidad(v) {
+  opacidadFoto = v / 100; $('opacidadFoto').value = v;
+  if (resultado) dibujarModelo(resultado.modelo, resultado.k, resultado.unidad);
+  comando(v ? 'COMPARAR  En naranja, la foto. Lo que no tenga dibujo encima falta o se ha desviado.' : 'COMPARAR  Solo el dibujo.');
+}
+$('opacidadFoto').oninput = (e) => ponerOpacidad(Number(e.target.value));
+$('verFoto').onclick = () => ponerOpacidad(70);
+$('soloDibujo').onclick = () => ponerOpacidad(0);
 
 // --- Corregir: marcas pintadas a mano -----------------------------------------------
 const COLOR_MARCA = { muro: '#ffd400', puerta: '#00e5ff', ventana: '#4d6dff', pilar: '#ff7bff', borrar: '#ff3b3b' };
