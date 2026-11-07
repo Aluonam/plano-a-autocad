@@ -48,6 +48,18 @@ una vez en una dirección HTTPS; la forma más sencilla es GitHub Pages, desde e
 GitHub solo sirve el código de la aplicación. Las fotos y los planos se procesan en la propia tablet y
 solo se guardan donde tú elijas al pulsar *Guardar* o *Compartir*.
 
+## Usarla desde el PC en la red local
+
+Sin publicarla, también se puede servir desde un PC con [Node.js](https://nodejs.org):
+
+1. Ejecuta `Abrir en la red local.bat` (o `node servir.js`). La ventana muestra la dirección, por ejemplo
+   `http://192.168.1.137:8080`.
+2. Ábrela en la tablet, conectada a la misma red.
+
+Así funciona todo salvo instalarla como aplicación, usarla sin conexión y el botón *Compartir*, que los
+navegadores solo permiten con HTTPS; *Guardar DXF* sí funciona. El servidor solo entrega los ficheros de la
+aplicación y solo atiende a redes privadas: las fotos se procesan en la tablet y no llegan al PC.
+
 ## Estructura
 
 | Carpeta | Contenido |
