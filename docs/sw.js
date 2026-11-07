@@ -1,11 +1,11 @@
 // Guarda la aplicación en la tablet para que funcione sin conexión. Las fotos y los planos no pasan por aquí:
 // se procesan en memoria y solo se guardan donde el usuario decida (Guardar o Compartir).
 'use strict';
-const VERSION = 'plano-a-cad-1';
+const VERSION = 'plano-a-cad-2';
 const FICHEROS = ['./', 'index.html', 'reconocer.js', 'dxf.js', 'trabajo.js', 'manifest.webmanifest', 'icono-192.png', 'icono-512.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FICHEROS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FICHEROS.map((f) => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()));

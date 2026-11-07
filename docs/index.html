@@ -208,7 +208,7 @@
         <div id="estado" class="estado" style="margin-top:0"></div>
         <button class="principal bloque oculto" id="compartir">Compartir o abrir en AutoCAD</button>
         <a class="btn bloque oculto" id="guardar">Guardar DXF</a>
-        <p class="nota" style="margin-top:8px">AutoCAD abre el DXF directamente. Si necesitas DWG, usa Guardar como.</p>
+        <p class="nota" style="margin-top:8px" id="ayudaGuardar"></p>
       </div>
       <div class="grupo oculto" id="grupoCapas">
         <h3>Capas</h3>
@@ -564,12 +564,24 @@ function mostrarResultado(d, segundos) {
   if (enlace.href) URL.revokeObjectURL(enlace.href);
   enlace.href = URL.createObjectURL(blob); enlace.download = fichero; enlace.textContent = `Guardar ${fichero}`;
   enlace.classList.remove('oculto');
-  // Compartir: abre el menú del sistema para mandarlo a AutoCAD, a la nube o por correo.
+  // Compartir (menú del sistema: AutoCAD, nube, correo) solo tiene sentido en tablet o móvil; en el PC se guarda
+  // y se abre con AutoCAD. Chrome no deja compartir ficheros .dxf: si el navegador lo rechaza, se guarda.
+  const tactil = window.matchMedia('(pointer: coarse)').matches || /iPad|iPhone|Android/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   let archivo = new File([d.dxf], fichero, { type: 'application/dxf' });
   if (navigator.canShare && !navigator.canShare({ files: [archivo] })) archivo = new File([d.dxf], fichero, { type: 'application/octet-stream' });
-  if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-    $('compartir').classList.remove('oculto');
-    $('compartir').onclick = () => navigator.share({ files: [archivo], title: fichero }).catch(() => {});
+  const puedeCompartir = tactil && navigator.canShare && navigator.canShare({ files: [archivo] });
+  $('compartir').classList.toggle('oculto', !puedeCompartir);
+  enlace.classList.toggle('principal', !puedeCompartir);
+  $('ayudaGuardar').textContent = puedeCompartir
+    ? 'Compartir abre el menú del sistema para enviarlo a AutoCAD, a la nube o por correo. Si no aparece AutoCAD, guárdalo y ábrelo desde la app.'
+    : 'Se guarda en Descargas. Ábrelo con AutoCAD; si necesitas DWG, usa Guardar como.';
+  if (puedeCompartir) {
+    $('compartir').onclick = () => navigator.share({ files: [archivo], title: fichero }).catch((err) => {
+      if (err && err.name === 'AbortError') return; // el usuario cerró el menú
+      enlace.click();
+      $('estado').innerHTML = '<span class="pendiente">Este navegador no deja compartir ficheros DXF: se ha guardado en Descargas. Ábrelo desde AutoCAD o desde Archivos.</span>';
+    });
   }
   $('estado').innerHTML = `<span class="ok">Plano convertido en ${String(segundos).replace('.', ',')} s.</span>`;
   const porCapa = {};
