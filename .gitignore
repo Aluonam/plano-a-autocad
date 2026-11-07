@@ -1,13 +1,13 @@
 # Programas de terceros: los descarga instalar.ps1
-vectorcraft/
-cadcraft/
-vectorcraft-dl/
-cadcraft-dl/
+/vectorcraft/
+/cadcraft/
+/vectorcraft-dl/
+/cadcraft-dl/
 
 # Datos personales: planos convertidos, fotos, pruebas y la clave de acceso
 plano-app/planos/
 plano-app/clave.txt
-pruebas/
+/pruebas/
 
 node_modules/
 *.log
