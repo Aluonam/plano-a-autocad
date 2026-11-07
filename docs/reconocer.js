@@ -391,7 +391,11 @@ function reconocer(png, opciones = {}) { return reconocerMascara(leerPng(png), o
 
 // imagen: { W, H, tinta } con tinta[i] = 1 donde hay trazo.
 function reconocerMascara(imagen, opciones = {}) {
-  const { W, H, tinta } = imagen;
+  const { W, H } = imagen;
+  // Marcas a mano (máscaras por tipo): lo pintado como «borrar» se ignora desde el principio.
+  const marcas = opciones.marcas || null;
+  let tinta = imagen.tinta;
+  if (marcas && marcas.borrar) { tinta = Uint8Array.from(tinta); for (let i = 0; i < tinta.length; i++) if (marcas.borrar[i]) tinta[i] = 0; }
   const N = W * H;
   let base = tinta;
   const lado = Math.max(W, H);
@@ -491,7 +495,36 @@ function reconocerMascara(imagen, opciones = {}) {
       });
     muros.push(...dobles);
   }
+  // Muros marcados a mano: los trazos pintados como muro pasan a ser muros aunque no lo parezcan.
+  function murosMarcados(mk) {
+    const sel = new Uint8Array(N);
+    for (let i = 0; i < N; i++) sel[i] = tinta[i] && mk[i] ? 1 : 0;
+    const banda = cerrar(sel, Math.max(2, Math.round(0.9 * grueso)));
+    for (let i = 0; i < N; i++) if (!mk[i]) banda[i] = 0;
+    const dB = distancia(banda, W, H), res = [];
+    for (const camino of trazosEsqueleto(esqueleto(banda, W, H), W, H)) {
+      const pts = simplificar(camino, Math.max(1.5, 0.5 * grueso));
+      for (let k = 1; k < pts.length; k++) {
+        const a = pts[k - 1], b = pts[k], dx = b[0] - a[0], dy = b[1] - a[1];
+        if (Math.hypot(dx, dy) < 2 * grueso) continue;
+        const ang = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI;
+        if (ang > 15 && ang < 75) continue; // de momento, solo muros horizontales y verticales
+        const gs = [];
+        for (let q = 0; q <= 10; q++) {
+          const x = Math.floor(a[0] + dx * q / 10), y = Math.floor(a[1] + dy * q / 10);
+          if (x >= 0 && y >= 0 && x < W && y < H && dB[y * W + x]) gs.push(2 * dB[y * W + x] - 1);
+        }
+        const t = Math.max(0.6 * grueso, Math.min(2.6 * grueso, mediana(gs) || grueso));
+        res.push(ang <= 15
+          ? { o: 'h', c: (a[1] + b[1]) / 2, a: Math.min(a[0], b[0]) - t / 2, b: Math.max(a[0], b[0]) + t / 2, t, forzado: true }
+          : { o: 'v', c: (a[0] + b[0]) / 2, a: Math.min(a[1], b[1]) - t / 2, b: Math.max(a[1], b[1]) + t / 2, t, forzado: true });
+      }
+    }
+    return res;
+  }
+  if (marcas && marcas.muro) for (const m of murosMarcados(marcas.muro)) muros.push(m);
   muros = regularizarMuros(muros, grueso);
+  for (const m of muros) if (m.forzado) m.suelto = false;
   // Un trozo corto y suelto se conserva si una ventana lo une a otro muro en el mismo eje (fachadas con
   // ventanas seguidas); si no, suele ser un poste, una letra gruesa o un borde, y se descarta.
   const ppm0 = opciones.pxPorMetro;
@@ -505,6 +538,7 @@ function reconocerMascara(imagen, opciones = {}) {
       if (vecino) { m.suelto = false; cambio = true; }
     }
   }
+  for (const m of muros) if (m.forzado) m.suelto = false;
   muros = muros.filter((m) => !m.suelto);
 
   // Muros a dos líneas: un tramo con una línea en el centro del muro es una ventana.
@@ -537,6 +571,40 @@ function reconocerMascara(imagen, opciones = {}) {
         inicio = b;
       }
       nuevos.push(tramos.length ? { ...m, a: inicio, unido: { a: false, b: m.unido && m.unido.b } } : m);
+    }
+    muros = nuevos;
+  }
+
+  // Puertas y ventanas marcadas a mano sobre un muro: se abre el hueco y se fuerza su tipo.
+  const forzadas = [];
+  const marcaEnBanda = (mk, o, c, t, al) => {
+    for (let pe = Math.round(c - t / 2); pe <= Math.round(c + t / 2); pe++) {
+      const [x, y] = o === 'h' ? [Math.round(al), pe] : [pe, Math.round(al)];
+      if (x >= 0 && y >= 0 && x < W && y < H && mk[y * W + x]) return true;
+    }
+    return false;
+  };
+  for (const tipo of ['puerta', 'ventana']) {
+    const mk = marcas && marcas[tipo];
+    if (!mk) continue;
+    const nuevos = [];
+    for (const m of muros) {
+      const tramos = [];
+      let k = Math.ceil(m.a);
+      while (k < m.b) {
+        if (!marcaEnBanda(mk, m.o, m.c, m.t, k)) { k++; continue; }
+        let f = k; while (f < m.b && marcaEnBanda(mk, m.o, m.c, m.t, f)) f++;
+        if (f - k >= 1.5 * m.t) tramos.push([k, f]);
+        k = f;
+      }
+      if (!tramos.length) { nuevos.push(m); continue; }
+      let inicio = m.a;
+      for (const [a, b] of tramos) {
+        if (a - inicio >= 0.5 * m.t) nuevos.push({ ...m, a: inicio, b: a, unido: { a: !!(m.unido && m.unido.a && inicio === m.a), b: false } });
+        forzadas.push({ o: m.o, c: m.c, a: Math.max(a, m.a), b: Math.min(b, m.b), t: m.t, forzado: tipo });
+        inicio = b;
+      }
+      if (m.b - inicio >= 0.5 * m.t) nuevos.push({ ...m, a: inicio, unido: { a: false, b: !!(m.unido && m.unido.b) } });
     }
     muros = nuevos;
   }
@@ -589,6 +657,26 @@ function reconocerMascara(imagen, opciones = {}) {
     for (const p of pilares)
       for (let y = Math.max(0, Math.floor(p.y0 - margen)); y < Math.min(H, Math.ceil(p.y1 + margen)); y++)
         for (let x = Math.max(0, Math.floor(p.x0 - margen)); x < Math.min(W, Math.ceil(p.x1 + margen)); x++) cubierto[y * W + x] = 1;
+  }
+  if (marcas && marcas.pilar) {
+    // Pilares marcados a mano: cada mancha pintada como pilar.
+    const visto = new Uint8Array(N), mk = marcas.pilar;
+    for (let i0 = 0; i0 < N; i0++) {
+      if (!tinta[i0] || !mk[i0] || visto[i0]) continue;
+      const pila = [i0]; visto[i0] = 1;
+      let x0 = W, y0 = H, x1 = 0, y1 = 0, area = 0;
+      while (pila.length) {
+        const i = pila.pop(), x = i % W, y = (i - x) / W;
+        area++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        for (const j of [i - 1, i + 1, i - W, i + W]) if (j >= 0 && j < N && tinta[j] && mk[j] && !visto[j]) { visto[j] = 1; pila.push(j); }
+      }
+      if (area < 4) continue;
+      const cx = (x0 + x1 + 1) / 2, cy = (y0 + y1 + 1) / 2, lado = Math.max(0.6 * grueso, Math.max(x1 - x0 + 1, y1 - y0 + 1) / 2);
+      const p = { x0: cx - lado, y0: cy - lado, x1: cx + lado, y1: cy + lado };
+      pilares.push(p);
+      for (let y = Math.max(0, Math.floor(p.y0 - margen)); y < Math.min(H, Math.ceil(p.y1 + margen)); y++)
+        for (let x = Math.max(0, Math.floor(p.x0 - margen)); x < Math.min(W, Math.ceil(p.x1 + margen)); x++) cubierto[y * W + x] = 1;
+    }
   }
   const resto = new Uint8Array(N);
   for (let i = 0; i < N; i++) resto[i] = tinta[i] && !cubierto[i] ? 1 : 0;
@@ -644,27 +732,49 @@ function reconocerMascara(imagen, opciones = {}) {
     const vacio = 1 - lleno / nl;
     return { arco: vacio >= 0.75 ? arco / n : 0, hoja: hoja / nh };
   }
+  const tipoMarcado = (h) => {
+    if (!marcas) return null;
+    for (const tipo of ['puerta', 'ventana']) {
+      const mk = marcas[tipo];
+      if (!mk) continue;
+      let si = 0, n = 0;
+      for (let al = Math.ceil(h.a); al < h.b; al++) { n++; if (marcaEnBanda(mk, h.o, h.c, h.t, al)) si++; }
+      if (n && si / n >= 0.3) return tipo;
+    }
+    return null;
+  };
+  for (let i = forzadas.length - 1; i >= 0; i--) candidatos.unshift(forzadas[i]);
   const aberturas = [...ventanasDobles];
   const consumir = ventanasDobles.map((v) => ({ forma: 'caja', o: v.o, c: v.c, a: v.a, b: v.b, t: v.t }));
   for (const h of candidatos) {
     const g0 = h.b - h.a;
     if (aberturas.some((x) => x.o === h.o && Math.abs(x.c - h.c) < grueso && Math.min(x.b, h.b) - Math.max(x.a, h.a) > 0.3 * g0)) continue;
-    // ¿Puerta? Un arco de radio el ancho del hueco, a un lado del muro.
-    let mejor = null;
+    const forz = h.forzado || tipoMarcado(h);
+    if (forz === 'ventana') {
+      aberturas.push({ tipo: 'ventana', o: h.o, c: h.c, a: h.a, b: h.b, t: h.t });
+      consumir.push({ forma: 'caja', o: h.o, c: h.c, a: h.a, b: h.b, t: h.t });
+      continue;
+    }
+    // ¿Puerta? Un arco de radio el ancho del hueco, a un lado del muro. Si está marcada como puerta, lo es
+    // seguro: solo se busca el lado y la bisagra que mejor encajan con el dibujo.
+    const marcada = forz === 'puerta';
+    let mejor = marcada ? (g0 > 1.4 * puertaMax
+      ? { v: -1, tipo: 'puerta-doble', bisagras: [[h.a, (h.a + h.b) / 2], [h.b, (h.a + h.b) / 2]], s: 1, R: g0 / 2 }
+      : { v: -1, tipo: 'puerta', bisagras: [[h.a, h.b]], s: 1, R: g0 }) : null;
     for (const s of [-1, 1]) {
       const cara = { pe: h.c + s * h.t / 2, s };
-      if (g0 >= puertaMin && g0 <= puertaMax) {
+      if (marcada || (g0 >= puertaMin && g0 <= puertaMax)) {
         for (const [bis, otro] of [[h.a, h.b], [h.b, h.a]]) {
           const p = puntuarArco(h.o, bis, otro, cara, g0);
           const v = p.arco + 0.25 * p.hoja;
-          if (p.arco >= 0.6 && (!mejor || v > mejor.v)) mejor = { v, tipo: 'puerta', bisagras: [[bis, otro]], s, R: g0 };
+          if ((marcada || p.arco >= 0.6) && (!mejor || v > mejor.v)) mejor = { v, tipo: 'puerta', bisagras: [[bis, otro]], s, R: g0 };
         }
       }
       const mitad = (h.a + h.b) / 2;
-      if (g0 / 2 >= puertaMin * 0.8 && g0 / 2 <= puertaMax) {
+      if (marcada || (g0 / 2 >= puertaMin * 0.8 && g0 / 2 <= puertaMax)) {
         const p1 = puntuarArco(h.o, h.a, mitad, cara, g0 / 2), p2 = puntuarArco(h.o, h.b, mitad, cara, g0 / 2);
         const v2 = Math.min(p1.arco, p2.arco) + 0.1;
-        if (p1.arco >= 0.6 && p2.arco >= 0.6 && (!mejor || v2 > mejor.v)) mejor = { v: v2, tipo: 'puerta-doble', bisagras: [[h.a, mitad], [h.b, mitad]], s, R: g0 / 2 };
+        if ((marcada ? v2 > 0.1 : p1.arco >= 0.6 && p2.arco >= 0.6) && (!mejor || v2 > mejor.v)) mejor = { v: v2, tipo: 'puerta-doble', bisagras: [[h.a, mitad], [h.b, mitad]], s, R: g0 / 2 };
       }
     }
     if (mejor) {
@@ -870,6 +980,27 @@ function imagenControl(modelo, png) {
   return escribirPngRgb(W, H, rgb);
 }
 
+// Convierte los trazos pintados en la tablet ({tipo, r, pts} en píxeles de la imagen) en una máscara por tipo.
+function mascaraDeTrazos(trazos, W, H) {
+  const tipos = ['muro', 'puerta', 'ventana', 'pilar', 'borrar'], m = {};
+  for (const t of trazos || []) {
+    if (!tipos.includes(t.tipo) || !t.pts || !t.pts.length) continue;
+    const mk = m[t.tipo] || (m[t.tipo] = new Uint8Array(W * H));
+    const r = Math.max(1, t.r), r2 = r * r;
+    const sello = (cx, cy) => {
+      for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(H - 1, Math.ceil(cy + r)); y++)
+        for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(W - 1, Math.ceil(cx + r)); x++)
+          if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r2) mk[y * W + x] = 1;
+    };
+    sello(t.pts[0][0], t.pts[0][1]);
+    for (let k = 1; k < t.pts.length; k++) {
+      const a = t.pts[k - 1], b = t.pts[k], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (r / 2)));
+      for (let q = 1; q <= n; q++) sello(a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n);
+    }
+  }
+  return Object.keys(m).length ? m : null;
+}
+
 // Calco: todo el dibujo como líneas, sin reconocer nada.
 function calcar(imagen) {
   const { W, H, tinta } = imagen;
@@ -882,6 +1013,6 @@ function calcar(imagen) {
     principal: null, puntosRelleno: [], avisos: [], resumen: { muros: 0, puertas: 0, ventanas: 0, huecos: 0, pilares: 0, lineas: lineas.length } };
 }
 
-const API = { reconocer, reconocerMascara, calcar, rectMuro, dxfR12, imagenControl, leerPng };
+const API = { reconocer, reconocerMascara, calcar, mascaraDeTrazos, rectMuro, dxfR12, imagenControl, leerPng };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 else self.Reconocer = API;

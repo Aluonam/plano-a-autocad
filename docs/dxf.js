@@ -19,21 +19,25 @@ function convertirPlano(imagen, opciones) {
   const ref = opciones.referencia;
   const pxRef = ref ? Math.hypot(ref.p2[0] - ref.p1[0], ref.p2[1] - ref.p1[1]) : 0;
   let k, origenEscala, modelo;
+  // Marcas pintadas a mano en la tablet (muro, puerta, ventana, pilar, borrar).
+  const marcas = opciones.trazos && opciones.trazos.length ? R.mascaraDeTrazos(opciones.trazos, imagen.W, imagen.H) : null;
   if (opciones.tipo === 'calco') {
-    modelo = R.calcar(imagen);
+    let img = imagen;
+    if (marcas && marcas.borrar) img = { W: imagen.W, H: imagen.H, tinta: imagen.tinta.map((v, i) => (marcas.borrar[i] ? 0 : v)) };
+    modelo = R.calcar(img);
     if (pxRef > 0) { k = ref.real / pxRef; origenEscala = 'medida'; }
     else { k = (25.4 / 72) / MM_POR_UNIDAD[unidad]; origenEscala = 'ninguna'; }
   } else if (pxRef > 0) {
     k = ref.real / pxRef; // unidades de dibujo por píxel
     origenEscala = 'medida';
-    modelo = R.reconocerMascara(imagen, { muros: opciones.muros, pxPorMetro: 1 / (k * metrosPorUnidad) });
+    modelo = R.reconocerMascara(imagen, { muros: opciones.muros, marcas, pxPorMetro: 1 / (k * metrosPorUnidad) });
   } else {
-    modelo = R.reconocerMascara(imagen, { muros: opciones.muros });
+    modelo = R.reconocerMascara(imagen, { muros: opciones.muros, marcas });
     const anchos = modelo.aberturas.filter((a) => a.tipo === 'puerta').map((a) => a.ancho).sort((a, b) => a - b);
     if (anchos.length >= 2) {
       k = (ANCHO_PUERTA_M / metrosPorUnidad) / anchos[anchos.length >> 1];
       origenEscala = 'puertas';
-      modelo = R.reconocerMascara(imagen, { muros: opciones.muros, pxPorMetro: 1 / (k * metrosPorUnidad) });
+      modelo = R.reconocerMascara(imagen, { muros: opciones.muros, marcas, pxPorMetro: 1 / (k * metrosPorUnidad) });
     } else {
       k = (25.4 / 72) / MM_POR_UNIDAD[unidad];
       origenEscala = 'ninguna';

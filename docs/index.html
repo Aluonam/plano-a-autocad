@@ -84,6 +84,9 @@
   .ok { color: var(--verde); } .pendiente { color: var(--ambar); } .error { color: var(--rojo); }
 
   .accion { position: sticky; bottom: 0; padding: 4px 12px 12px; background: var(--panel); border-top: 1px solid var(--borde); }
+  .herramientas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .herramientas button { padding: 8px 4px; font-size: 13px; }
+  .herramientas button.activo { border-color: var(--acento); background: #2f3a48; box-shadow: inset 0 -2px 0 var(--acento); }
   table.capas { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.capas td { padding: 4px 4px; border-bottom: 1px solid #2c323b; }
   table.capas td:last-child { text-align: right; color: var(--suave); font-variant-numeric: tabular-nums; }
@@ -209,6 +212,21 @@
         <button class="principal bloque oculto" id="compartir">Compartir o abrir en AutoCAD</button>
         <a class="btn bloque oculto" id="guardar">Guardar DXF</a>
         <p class="nota" style="margin-top:8px" id="ayudaGuardar"></p>
+      </div>
+      <div class="grupo oculto" id="grupoCorregir">
+        <h3>Corregir <button class="info" data-ayuda="ayCorregir" aria-label="Más información">i</button></h3>
+        <p class="explica oculto" id="ayCorregir">Si algo no se ha reconocido bien, elige una herramienta, pinta encima en el dibujo y pulsa «Aplicar correcciones». <b>Muro</b>: lo pintado pasa a ser muro. <b>Puerta</b> o <b>Ventana</b>: pinta sobre el hueco o el tramo de muro donde va. <b>Pilar</b>: pinta sobre el poste. <b>Borrar</b>: lo pintado se ignora (manchas, textos que estorban, una ventana que no lo es). Las marcas se guardan hasta que empieces otro plano.</p>
+        <div class="herramientas">
+          <button data-herr="muro"><span class="color" style="background:#ffd400"></span>Muro</button>
+          <button data-herr="puerta"><span class="color" style="background:#00e5ff"></span>Puerta</button>
+          <button data-herr="ventana"><span class="color" style="background:#4d6dff"></span>Ventana</button>
+          <button data-herr="pilar"><span class="color" style="background:#ff7bff"></span>Pilar</button>
+          <button data-herr="borrar"><span class="color" style="background:#ff3b3b"></span>Borrar</button>
+          <button id="soltarHerramienta">Ninguna</button>
+        </div>
+        <label class="rango">Grosor del rotulador<input type="range" id="pincel" min="6" max="60" value="18"></label>
+        <div class="fila"><button id="deshacerMarca">Deshacer</button><button id="quitarMarcas">Quitar marcas</button></div>
+        <button class="principal bloque" id="aplicarMarcas" disabled>Aplicar correcciones</button>
       </div>
       <div class="grupo oculto" id="grupoCapas">
         <h3>Capas</h3>
@@ -403,7 +421,7 @@ function enderezar() {
 $('enderezar').onclick = () => {
   esperando('Enderezando…');
   setTimeout(() => {
-    try { const r = enderezar(); if (r) { enderezada = r; puntos = []; mostrar('p3'); limpiar(); } }
+    try { const r = enderezar(); if (r) { enderezada = r; puntos = []; trazos = []; resultado = null; mostrar('p3'); limpiar(); } }
     finally { esperando(null); }
   }, 30);
 };
@@ -531,12 +549,18 @@ const nombreFichero = () => (($('nombre').value.trim() || 'plano').normalize('NF
 $('convertir').onclick = () => {
   const px = distanciaPx(), real = medidaReal();
   if (px && !(real > 0)) { alert('Escribe cuánto mide la línea verde, o pulsa «Borrar la línea».'); return; }
-  const opciones = { tipo: tipoElegido(), muros: murosElegidos(), unidad: $('unidad').value, referencia: px ? { p1: puntos[0], p2: puntos[1], real } : null };
+  opcionesUltimas = { tipo: tipoElegido(), muros: murosElegidos(), unidad: $('unidad').value, referencia: px ? { p1: puntos[0], p2: puntos[1], real } : null };
+  lanzar();
+};
+let opcionesUltimas = null;
+function lanzar() {
+  const opciones = { ...opcionesUltimas, trazos };
+  const repeticion = !!resultado;
   mostrar('p5');
   $('compartir').classList.add('oculto'); $('guardar').classList.add('oculto'); $('grupoCapas').classList.add('oculto');
   $('estado').innerHTML = 'Reconociendo el plano…';
   comando('DXF  Reconociendo muros, puertas y ventanas…');
-  const g = cvResultado.getContext('2d'); cvResultado.width = cvMedida.width; cvResultado.height = cvMedida.height; g.drawImage(cvMedida, 0, 0);
+  if (!repeticion) { const g = cvResultado.getContext('2d'); cvResultado.width = cvMedida.width; cvResultado.height = cvMedida.height; g.drawImage(cvMedida, 0, 0); }
   esperando('Reconociendo muros, puertas y ventanas…');
   if (!trabajador) trabajador = new Worker('trabajo.js');
   const t0 = performance.now();
@@ -550,7 +574,7 @@ $('convertir').onclick = () => {
   trabajador.onerror = (e) => { esperando(null); $('estado').innerHTML = `<span class="error">Error al convertir: ${e.message || 'desconocido'}</span>`; };
   const tinta = Uint8Array.from(negroActual);
   trabajador.postMessage({ W: limpia.width, H: limpia.height, tinta, opciones }, [tinta.buffer]);
-};
+}
 
 const COLORES = { MUROS: '#ffffff', 'MUROS-RELLENO': '#8c8c8c', PILARES: '#ffffff', PUERTAS: '#00ffff', VENTANAS: '#4d6dff', COTAS: '#00ff00',
   'TEXTO-A-MANO': '#ffff00', DETALLES: '#8c8c8c', REVISAR: '#ff3b3b', DIBUJO: '#ffffff' };
@@ -598,6 +622,8 @@ function mostrarResultado(d, segundos) {
   for (const a of m.avisos || []) esc += `<br><span class="pendiente">${a}</span>`;
   $('escalaInfo').innerHTML = esc;
   $('grupoCapas').classList.remove('oculto');
+  $('grupoCorregir').classList.remove('oculto');
+  actualizarHerramientas();
   comando(`DXF  ${s.muros} muros, ${s.puertas} puertas, ${s.ventanas} ventanas. Pulse Compartir o Guardar.`);
 }
 // Vista previa con los colores de capa de AutoCAD sobre fondo oscuro.
@@ -647,9 +673,61 @@ function dibujarModelo(m, k, u) {
     g.save(); g.translate(xd - h * 0.35, (pr.y0 + pr.y1) / 2); g.rotate(-Math.PI / 2); g.fillText(fmt(pr.y1 - pr.y0), 0, 0); g.restore();
   }
   g.restore();
+  baseResultado = lienzo(cvResultado.width, cvResultado.height);
+  baseResultado.getContext('2d').drawImage(cvResultado, 0, 0);
+  pintarMarcas();
 }
+
+// --- Corregir: marcas pintadas a mano -----------------------------------------------
+const COLOR_MARCA = { muro: '#ffd400', puerta: '#00e5ff', ventana: '#4d6dff', pilar: '#ff7bff', borrar: '#ff3b3b' };
+const QUE_ES = { muro: 'muro', puerta: 'una puerta', ventana: 'una ventana', pilar: 'un pilar', borrar: 'lo que hay que ignorar' };
+let trazos = [], herramienta = null, trazoActual = null, baseResultado = null;
+function actualizarHerramientas() {
+  document.querySelectorAll('[data-herr]').forEach((b) => b.classList.toggle('activo', b.dataset.herr === herramienta));
+  $('soltarHerramienta').classList.toggle('activo', !herramienta);
+  $('aplicarMarcas').disabled = !trazos.length;
+  cvResultado.style.cursor = herramienta ? 'crosshair' : '';
+  if (herramienta) comando(`CORREGIR  Pinte sobre ${QUE_ES[herramienta]} y pulse Aplicar correcciones:`);
+  else if (trazos.length) comando(`CORREGIR  ${trazos.length} marca${trazos.length > 1 ? 's' : ''}. Pulse Aplicar correcciones.`);
+}
+document.querySelectorAll('[data-herr]').forEach((b) => { b.onclick = () => { herramienta = herramienta === b.dataset.herr ? null : b.dataset.herr; actualizarHerramientas(); }; });
+$('soltarHerramienta').onclick = () => { herramienta = null; actualizarHerramientas(); };
+function pintarMarcas() {
+  if (!baseResultado || !resultado) return;
+  const g = cvResultado.getContext('2d'), esc = cvResultado.width / resultado.modelo.W;
+  g.drawImage(baseResultado, 0, 0);
+  g.save(); g.globalAlpha = 0.4; g.lineCap = 'round'; g.lineJoin = 'round';
+  for (const t of trazoActual ? [...trazos, trazoActual] : trazos) {
+    g.strokeStyle = g.fillStyle = COLOR_MARCA[t.tipo];
+    if (t.pts.length === 1) { g.beginPath(); g.arc(t.pts[0][0] * esc, t.pts[0][1] * esc, t.r * esc, 0, Math.PI * 2); g.fill(); continue; }
+    g.lineWidth = 2 * t.r * esc; g.beginPath(); g.moveTo(t.pts[0][0] * esc, t.pts[0][1] * esc);
+    for (const p of t.pts.slice(1)) g.lineTo(p[0] * esc, p[1] * esc);
+    g.stroke();
+  }
+  g.restore();
+}
+cvResultado.addEventListener('pointerdown', (e) => {
+  if (!herramienta || !resultado) return;
+  const { x, y } = posEnLienzo(cvResultado, e), esc = cvResultado.width / resultado.modelo.W;
+  const r = ($('pincel').value / 2) * factorPantalla(cvResultado) / esc; // el grosor elegido, en píxeles de la imagen
+  trazoActual = { tipo: herramienta, r, pts: [[x / esc, y / esc]] };
+  cvResultado.setPointerCapture(e.pointerId);
+  pintarMarcas();
+});
+cvResultado.addEventListener('pointermove', (e) => {
+  if (!trazoActual) return;
+  const { x, y } = posEnLienzo(cvResultado, e), esc = cvResultado.width / resultado.modelo.W, p = [x / esc, y / esc];
+  const u = trazoActual.pts[trazoActual.pts.length - 1];
+  if (Math.hypot(p[0] - u[0], p[1] - u[1]) >= trazoActual.r / 4) { trazoActual.pts.push(p); pintarMarcas(); }
+});
+const terminarTrazo = () => { if (!trazoActual) return; trazos.push(trazoActual); trazoActual = null; pintarMarcas(); actualizarHerramientas(); };
+cvResultado.addEventListener('pointerup', terminarTrazo);
+cvResultado.addEventListener('pointercancel', terminarTrazo);
+$('deshacerMarca').onclick = () => { trazos.pop(); pintarMarcas(); actualizarHerramientas(); };
+$('quitarMarcas').onclick = () => { trazos = []; pintarMarcas(); actualizarHerramientas(); };
+$('aplicarMarcas').onclick = () => { herramienta = null; actualizarHerramientas(); lanzar(); };
 $('ajustar').onclick = () => { mostrar('p4'); dibujarMedida(); };
-$('nuevo').onclick = () => { $('nombre').value = ''; $('real').value = ''; puntos = []; resultado = null; mostrar('p1'); };
+$('nuevo').onclick = () => { $('nombre').value = ''; $('real').value = ''; puntos = []; resultado = null; trazos = []; herramienta = null; baseResultado = null; $('grupoCorregir').classList.add('oculto'); mostrar('p1'); };
 
 window.addEventListener('resize', () => {
   if (foto && !cvEsq.classList.contains('oculto')) dibujarEsquinas();
