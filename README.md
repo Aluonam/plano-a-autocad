@@ -13,9 +13,14 @@ Funciona entera en la tablet: la foto no se sube a ningún sitio y, una vez inst
 2. **Esquinas**: arrastra los pinzamientos a las esquinas de la hoja; la foto se endereza.
 3. **Limpieza**: ajusta hasta que las líneas se vean limpias.
 4. **Datos**: elige el tipo de dibujo, toca los dos extremos de una medida conocida y escribe cuánto mide.
-5. **Resultado**: «Compartir o abrir en AutoCAD» (abre el menú del sistema: AutoCAD, Drive, correo…) o «Guardar DXF».
+5. **Resultado**: «Abrir en CADCraft» lo abre dentro de la propia aplicación para revisarlo, editarlo y guardarlo
+   en DWG o DXF. También puedes «Compartir DXF» o «Guardar DXF» para llevarlo a AutoCAD u otro programa.
+6. **Corregir**: si algo no se ha reconocido bien, pinta encima con el rotulador de Muro, Puerta, Ventana o Pilar,
+   o con Borrar para que se ignore, y pulsa «Aplicar correcciones».
 
-AutoCAD abre el DXF directamente. Si necesitas DWG, usa *Guardar como* en AutoCAD.
+[CADCraft](https://github.com/storytold/cadcraft) es un programa de CAD de código libre (MIT o Apache-2.0). Va
+incluido en la aplicación (carpeta `docs/cadcraft/`, sin modificar) y funciona en el navegador de la tablet; la
+primera vez que se abre se descarga (unos 5 MB comprimido) y después funciona sin conexión.
 
 ## Qué contiene el DXF
 
@@ -64,6 +69,7 @@ aplicación y solo atiende a redes privadas: las fotos se procesan en la tablet 
 
 | Carpeta | Contenido |
 |---|---|
+| `docs/cadcraft/` | CADCraft web 0.18.0 sin modificar, con sus licencias (ver su `LEEME.md`) |
 | `docs/` | La aplicación de la tablet: `index.html` (interfaz), `reconocer.js` (reconocimiento de muros, puertas, ventanas y pilares), `dxf.js` (escala y escritura del DXF), `trabajo.js` (proceso en segundo plano) y `sw.js` (uso sin conexión) |
 | `plano-app/` | Versión anterior para PC con Windows: servidor local que además genera DWG con [CADCraft](https://github.com/storytold/cadcraft). Opcional |
 | `instalar.ps1` | Descarga y verifica CADCraft y VectorCraft para la versión de PC |
@@ -76,9 +82,11 @@ Para probar la aplicación en un ordenador basta con servir la carpeta `docs/` e
 - Los muros diagonales o curvos no se reconocen y van a `REVISAR`.
 - En croquis muy cargados aparecen algunas puertas o ventanas de más, o falta algún tramo de muro.
 - Sin medida de referencia, la escala se estima suponiendo puertas de 80 cm.
-- En la tablet no se genera DWG: AutoCAD lo crea al guardar el DXF.
+- El DWG se genera desde CADCraft (Archivo › Guardar como); la aplicación por sí sola escribe DXF.
+- CADCraft está en desarrollo temprano y su interfaz está pensada para ratón: en tablet funciona, pero los botones son pequeños.
 
 ## Créditos
 
-La versión de PC usa CADCraft y VectorCraft, del equipo ArtCraft (MIT o Apache-2.0), que no se incluyen
-en este repositorio. Sus nombres y logotipos son marcas de ArtCraft.
+CADCraft y VectorCraft son del equipo ArtCraft (MIT o Apache-2.0). La versión web de CADCraft se incluye sin
+modificar en `docs/cadcraft/`; VectorCraft y la versión de escritorio de CADCraft no se incluyen. Sus nombres y
+logotipos son marcas de ArtCraft.

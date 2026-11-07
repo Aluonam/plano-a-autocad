@@ -84,6 +84,11 @@
   .ok { color: var(--verde); } .pendiente { color: var(--ambar); } .error { color: var(--rojo); }
 
   .accion { position: sticky; bottom: 0; padding: 4px 12px 12px; background: var(--panel); border-top: 1px solid var(--borde); }
+  #capaCad { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: #23272e; }
+  .barraCad { display: flex; align-items: center; gap: 12px; height: 44px; padding: env(safe-area-inset-top) 10px 0; border-bottom: 1px solid #15181c; font-size: 14px; }
+  .barraCad img { width: 20px; height: 20px; vertical-align: -4px; margin-right: 6px; }
+  .barraCad #estadoCad { flex: 1; font-size: 13px; color: var(--suave); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #marcoCad { flex: 1; width: 100%; border: 0; background: #212830; }
   .herramientas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
   .herramientas button { padding: 8px 4px; font-size: 13px; }
   .herramientas button.activo { border-color: var(--acento); background: #2f3a48; box-shadow: inset 0 -2px 0 var(--acento); }
@@ -209,7 +214,8 @@
       <div class="titulo">Resultado</div>
       <div class="grupo">
         <div id="estado" class="estado" style="margin-top:0"></div>
-        <button class="principal bloque oculto" id="compartir">Compartir o abrir en AutoCAD</button>
+        <button class="principal bloque oculto" id="abrirCad">Abrir en CADCraft</button>
+        <button class="bloque oculto" id="compartir">Compartir DXF</button>
         <a class="btn bloque oculto" id="guardar">Guardar DXF</a>
         <p class="nota" style="margin-top:8px" id="ayudaGuardar"></p>
       </div>
@@ -241,6 +247,11 @@
 </main>
 
 <footer><span class="prompt">Comando:</span><span id="cmd"></span></footer>
+
+<div id="capaCad" class="oculto">
+  <div class="barraCad"><b><img src="icono-192.png" alt="">CADCraft</b><span id="estadoCad"></span><button id="cerrarCad">Volver al plano</button></div>
+  <iframe id="marcoCad" title="CADCraft" allow="fullscreen; clipboard-read; clipboard-write"></iframe>
+</div>
 
 <script>
 'use strict';
@@ -557,7 +568,7 @@ function lanzar() {
   const opciones = { ...opcionesUltimas, trazos };
   const repeticion = !!resultado;
   mostrar('p5');
-  $('compartir').classList.add('oculto'); $('guardar').classList.add('oculto'); $('grupoCapas').classList.add('oculto');
+  $('abrirCad').classList.add('oculto'); $('compartir').classList.add('oculto'); $('guardar').classList.add('oculto'); $('grupoCapas').classList.add('oculto');
   $('estado').innerHTML = 'Reconociendo el plano…';
   comando('DXF  Reconociendo muros, puertas y ventanas…');
   if (!repeticion) { const g = cvResultado.getContext('2d'); cvResultado.width = cvMedida.width; cvResultado.height = cvMedida.height; g.drawImage(cvMedida, 0, 0); }
@@ -596,10 +607,9 @@ function mostrarResultado(d, segundos) {
   if (navigator.canShare && !navigator.canShare({ files: [archivo] })) archivo = new File([d.dxf], fichero, { type: 'application/octet-stream' });
   const puedeCompartir = tactil && navigator.canShare && navigator.canShare({ files: [archivo] });
   $('compartir').classList.toggle('oculto', !puedeCompartir);
-  enlace.classList.toggle('principal', !puedeCompartir);
-  $('ayudaGuardar').textContent = puedeCompartir
-    ? 'Compartir abre el menú del sistema para enviarlo a AutoCAD, a la nube o por correo. Si no aparece AutoCAD, guárdalo y ábrelo desde la app.'
-    : 'Se guarda en Descargas. Ábrelo con AutoCAD; si necesitas DWG, usa Guardar como.';
+  $('abrirCad').classList.remove('oculto');
+  $('ayudaGuardar').textContent = 'Abrir en CADCraft lo abre aquí mismo para revisarlo, editarlo y guardarlo en DWG o DXF.' +
+    (puedeCompartir ? ' Compartir envía el DXF a otra aplicación, a la nube o por correo.' : ' Guardar deja el DXF en Descargas.');
   if (puedeCompartir) {
     $('compartir').onclick = () => navigator.share({ files: [archivo], title: fichero }).catch((err) => {
       if (err && err.name === 'AbortError') return; // el usuario cerró el menú
@@ -726,6 +736,46 @@ cvResultado.addEventListener('pointercancel', terminarTrazo);
 $('deshacerMarca').onclick = () => { trazos.pop(); pintarMarcas(); actualizarHerramientas(); };
 $('quitarMarcas').onclick = () => { trazos = []; pintarMarcas(); actualizarHerramientas(); };
 $('aplicarMarcas').onclick = () => { herramienta = null; actualizarHerramientas(); lanzar(); };
+// --- CADCraft integrado (código libre, en la propia aplicación) -----------------------
+const marcoCad = $('marcoCad');
+let cadListo = false, cadPendiente = null, cadSucio = false;
+function abrirEnCad() {
+  if (!resultado) return;
+  cadPendiente = { name: nombreFichero() + '.dxf', bytes: new TextEncoder().encode(resultado.dxf) };
+  $('capaCad').classList.remove('oculto');
+  if (!marcoCad.getAttribute('src')) {
+    $('estadoCad').textContent = 'Cargando CADCraft… la primera vez tarda un poco; después funciona sin conexión.';
+    marcoCad.src = 'cadcraft/?host=parent';
+  } else enviarACad();
+}
+function enviarACad() {
+  if (!cadListo || !cadPendiente) return;
+  marcoCad.contentWindow.postMessage({ type: 'cadcraft:open', name: cadPendiente.name, bytes: cadPendiente.bytes }, location.origin);
+  $('estadoCad').textContent = `${cadPendiente.name} abierto. Para guardarlo: Archivo › Guardar como (DWG o DXF).`;
+  cadPendiente = null;
+}
+// Todo lo que CADCraft guarda o exporta llega aquí y se descarga en el dispositivo.
+function guardarDeCad(nombre, bytes) {
+  const blob = new Blob([bytes], { type: /\.dwg$/i.test(nombre) ? 'application/acad' : 'application/octet-stream' });
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  $('estadoCad').innerHTML = `<span class="ok">${nombre} guardado en Descargas.</span>`;
+  cadSucio = false;
+}
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || e.source !== marcoCad.contentWindow) return;
+  const d = e.data || {};
+  if (d.type === 'cadcraft:ready') { cadListo = true; enviarACad(); }
+  else if (d.type === 'cadcraft:save') guardarDeCad(d.name, d.bytes);
+  else if (d.type === 'cadcraft:dirty') cadSucio = !!d.dirty;
+  else if (d.type === 'cadcraft:failed') $('estadoCad').innerHTML = `<span class="error">CADCraft no ha podido arrancar: ${d.error}</span>`;
+});
+$('abrirCad').onclick = abrirEnCad;
+$('cerrarCad').onclick = () => {
+  if (cadSucio && !confirm('Hay cambios sin guardar en CADCraft. ¿Volver al plano igualmente?')) return;
+  $('capaCad').classList.add('oculto');
+};
 $('ajustar').onclick = () => { mostrar('p4'); dibujarMedida(); };
 $('nuevo').onclick = () => { $('nombre').value = ''; $('real').value = ''; puntos = []; resultado = null; trazos = []; herramienta = null; baseResultado = null; $('grupoCorregir').classList.add('oculto'); mostrar('p1'); };
 
