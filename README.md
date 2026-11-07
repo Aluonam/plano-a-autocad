@@ -5,6 +5,8 @@ con los muros, pilares, puertas, ventanas y cotas ya reconocidos y cada cosa en 
 
 Funciona entera en la tablet: la foto no se sube a ningún sitio y, una vez instalada, no necesita conexión.
 
+**Abrir la aplicación:** https://aluonam.github.io/plano-a-autocad/
+
 ## Cómo se usa
 
 1. **Foto**: haz la foto del plano con la tablet, o abre una imagen o un escaneo.
@@ -34,16 +36,14 @@ Las unidades son las elegidas en la aplicación (metros por defecto). Si redefin
 
 ## Instalarla en la tablet
 
-La aplicación es una página web que se instala como una aplicación (PWA). Solo hay que publicarla
-una vez en una dirección HTTPS; la forma más sencilla es GitHub Pages, desde este mismo repositorio:
+La aplicación es una página web que se instala como una aplicación (PWA). Está publicada con GitHub
+Pages desde la carpeta `docs/` de este repositorio; cada cambio que se sube a `main` se publica solo.
 
-1. En GitHub, *Settings › Pages*: *Deploy from a branch*, rama `main`, carpeta `/docs`.
-   (GitHub Pages es gratis con repositorios públicos; con uno privado hace falta un plan de pago.)
-2. Abre en la tablet la dirección que indica GitHub, por ejemplo `https://usuario.github.io/plano-a-autocad/`.
-3. Instálala:
+1. Abre en la tablet https://aluonam.github.io/plano-a-autocad/
+2. Instálala:
    - **iPad**: Safari › Compartir › *Añadir a pantalla de inicio*.
    - **Android**: Chrome › menú › *Instalar aplicación*.
-4. A partir de ahí se abre desde su icono y funciona sin conexión.
+3. A partir de ahí se abre desde su icono y funciona sin conexión.
 
 GitHub solo sirve el código de la aplicación. Las fotos y los planos se procesan en la propia tablet y
 solo se guardan donde tú elijas al pulsar *Guardar* o *Compartir*.
