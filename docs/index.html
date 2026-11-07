@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plano a AutoCAD</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#23272e">
+<link rel="icon" href="icono-192.png">
+<link rel="apple-touch-icon" href="icono-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Plano a CAD">
+<style>
+  :root {
+    --fondo: #2b2f36; --panel: #353b45; --cabecera: #3d4450; --borde: #4b5361; --texto: #e3e6ea; --suave: #9aa3af;
+    --acento: #0696d7; --lienzo: #212830; --rojo: #e5484d; --verde: #3fb950; --ambar: #d6a23c;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--fondo); color: var(--texto); display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+    font: 15px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; -webkit-tap-highlight-color: transparent;
+  }
+  .oculto { display: none !important; }
+
+  /* Barra superior, como la cinta de opciones */
+  header { display: flex; align-items: stretch; height: 44px; background: #23272e; border-bottom: 1px solid #15181c; padding-top: env(safe-area-inset-top); }
+  .marca { display: flex; align-items: center; gap: 8px; padding: 0 14px; font-weight: 600; font-size: 14px; border-right: 1px solid #15181c; white-space: nowrap; }
+  .marca img { width: 22px; height: 22px; border-radius: 2px; }
+  nav { display: flex; overflow-x: auto; }
+  nav span { display: flex; align-items: center; padding: 0 12px; font-size: 13px; color: #6f7885; border-bottom: 2px solid transparent; white-space: nowrap; }
+  nav span.hecho { color: var(--suave); }
+  nav span.activo { color: #fff; border-bottom-color: var(--acento); background: #2b3038; }
+
+  /* Área de dibujo y paleta de propiedades */
+  main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 340px; min-height: 0; }
+  .lienzo {
+    position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden; background-color: var(--lienzo);
+    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .lienzo canvas { display: block; max-width: calc(100% - 28px); max-height: calc(100% - 28px); touch-action: none; box-shadow: 0 0 0 1px #3a4250; }
+  .ucs { position: absolute; left: 12px; bottom: 10px; width: 46px; height: 46px; opacity: .8; pointer-events: none; }
+  .vacio { text-align: center; color: #6f7885; font-size: 14px; }
+  .vacio svg { width: 84px; height: 84px; display: block; margin: 0 auto 10px; opacity: .6; }
+  .espera { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(33,40,48,.75); font-size: 14px; }
+  .ruedita { width: 18px; height: 18px; border: 2px solid #4b5361; border-top-color: var(--acento); border-radius: 50%; animation: g .9s linear infinite; margin-right: 10px; }
+  @keyframes g { to { transform: rotate(360deg); } }
+
+  aside { background: var(--panel); border-left: 1px solid #1b1f24; overflow-y: auto; }
+  .titulo { display: flex; align-items: center; justify-content: space-between; background: var(--cabecera); padding: 7px 12px; border-bottom: 1px solid var(--borde);
+    font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--suave); position: sticky; top: 0; z-index: 1; }
+  .grupo { padding: 10px 12px 12px; border-bottom: 1px solid #2c323b; }
+  .grupo h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .nota { margin: 0 0 8px; font-size: 13px; color: var(--suave); }
+  .explica { margin: 4px 0 8px; padding: 8px 10px; font-size: 13px; color: #c9d0d8; background: #2b313a; border-left: 3px solid var(--acento); }
+  .info { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--suave); background: transparent; color: var(--suave);
+    font: italic 700 11px/16px Georgia, serif; cursor: pointer; flex: none; }
+  .info.activo { background: var(--acento); border-color: var(--acento); color: #fff; }
+
+  button, .btn {
+    display: inline-block; font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 2px; border: 1px solid #59616e; background: #454c58;
+    color: var(--texto); cursor: pointer; text-align: center; text-decoration: none; user-select: none;
+  }
+  button:active, .btn:active { background: #525a67; }
+  button:disabled { opacity: .5; }
+  .principal { background: var(--acento); border-color: #0a7fb6; color: #fff; font-weight: 600; }
+  .principal:active { background: #0583be; }
+  .bloque { display: block; width: 100%; margin-top: 8px; }
+  .fila { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .fila > * { flex: 1; }
+  select, input[type=text] { width: 100%; font: inherit; font-size: 14px; padding: 8px; border-radius: 2px; border: 1px solid #59616e; background: #2b2f36; color: var(--texto); }
+  input[type=range] { width: 100%; accent-color: var(--acento); }
+  label.rango { display: block; font-size: 13px; color: #c9d0d8; margin-top: 6px; }
+  label.chk { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 8px; }
+  input[type=checkbox], input[type=radio] { accent-color: var(--acento); width: 16px; height: 16px; margin: 0; flex: none; }
+  .opcion { display: flex; gap: 9px; align-items: flex-start; padding: 8px 9px; margin-top: 6px; border: 1px solid var(--borde); border-radius: 2px; cursor: pointer; font-size: 14px; }
+  .opcion input { margin-top: 3px; }
+  .opcion small { color: var(--suave); }
+  .opcion:has(input:checked) { border-color: var(--acento); background: #2f3a48; }
+  .medida { display: grid; grid-template-columns: 1fr 120px; gap: 6px; }
+  .estado { font-size: 13px; margin-top: 8px; }
+  .ok { color: var(--verde); } .pendiente { color: var(--ambar); } .error { color: var(--rojo); }
+
+  .accion { position: sticky; bottom: 0; padding: 4px 12px 12px; background: var(--panel); border-top: 1px solid var(--borde); }
+  table.capas { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.capas td { padding: 4px 4px; border-bottom: 1px solid #2c323b; }
+  table.capas td:last-child { text-align: right; color: var(--suave); font-variant-numeric: tabular-nums; }
+  .color { display: inline-block; width: 11px; height: 11px; border: 1px solid #111; margin-right: 6px; vertical-align: -1px; }
+
+  /* Línea de comandos */
+  footer { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px calc(env(safe-area-inset-bottom)); background: #1b1f24; border-top: 1px solid #111;
+    font: 13px Consolas, "Cascadia Mono", Menlo, monospace; color: #c9d1d9; white-space: nowrap; overflow: hidden; }
+  footer .prompt { color: var(--suave); }
+  footer #cmd { overflow: hidden; text-overflow: ellipsis; }
+
+  @media (max-width: 820px) {
+    body { height: auto; min-height: 100dvh; overflow: auto; }
+    main { grid-template-columns: 1fr; grid-template-rows: 58vh auto; }
+    aside { border-left: none; border-top: 1px solid #1b1f24; overflow: visible; }
+    footer { position: sticky; bottom: 0; }
+    .accion { bottom: 34px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="marca"><img src="icono-192.png" alt="">Plano a AutoCAD</div>
+  <nav id="pestanas">
+    <span data-p="p1">1 Foto</span><span data-p="p2">2 Esquinas</span><span data-p="p3">3 Limpieza</span><span data-p="p4">4 Datos</span><span data-p="p5">5 Resultado</span>
+  </nav>
+</header>
+
+<main>
+  <section class="lienzo" id="lienzo">
+    <div class="vacio" data-p="p1">
+      <svg viewBox="0 0 100 100" fill="none" stroke="#9aa3af" stroke-width="3"><rect x="14" y="14" width="72" height="72"/><path d="M52 14v40M52 54h34M30 86V68M30 68a18 18 0 0 1 18 18"/></svg>
+      Sin plano. Haz una foto o abre una imagen.
+    </div>
+    <canvas id="cvEsq" data-p="p2"></canvas>
+    <canvas id="cvLimpio" data-p="p3"></canvas>
+    <canvas id="cvMedida" data-p="p4"></canvas>
+    <canvas id="cvResultado" data-p="p5"></canvas>
+    <div class="espera oculto" id="espera"><div class="ruedita"></div><span id="esperaTexto">Procesando…</span></div>
+    <svg class="ucs" viewBox="0 0 46 46" fill="none" stroke="#c9d1d9" stroke-width="1.5"><path d="M6 40V8M6 40h32M3 12l3-5 3 5M34 37l5 3-5 3"/><text x="11" y="12" fill="#c9d1d9" stroke="none" font-size="9" font-family="monospace">Y</text><text x="34" y="34" fill="#c9d1d9" stroke="none" font-size="9" font-family="monospace">X</text></svg>
+  </section>
+
+  <aside>
+    <!-- 1. Foto -->
+    <div class="panel" data-p="p1">
+      <div class="titulo">Foto del plano <button class="info" data-ayuda="ayFoto" aria-label="Más información">i</button></div>
+      <div class="grupo">
+        <p class="explica oculto" id="ayFoto">Pon la hoja sobre una mesa de otro color, sin tu sombra ni reflejos, y acércate hasta que ocupe casi toda la foto. Repasa los muros con un trazo más grueso que el resto y dibuja las puertas como un hueco en el muro con su arco de apertura. La foto no sale de la tablet.</p>
+        <label class="btn principal bloque">Hacer foto<input type="file" accept="image/*" capture="environment" id="foto" hidden></label>
+        <label class="btn bloque">Abrir imagen o escaneo<input type="file" accept="image/*" id="archivo" hidden></label>
+      </div>
+    </div>
+
+    <!-- 2. Esquinas -->
+    <div class="panel oculto" data-p="p2">
+      <div class="titulo">Esquinas de la hoja <button class="info" data-ayuda="ayEsquinas" aria-label="Más información">i</button></div>
+      <div class="grupo">
+        <p class="explica oculto" id="ayEsquinas">Arrastra los cuatro pinzamientos azules a las esquinas de la hoja: la foto se endereza como si estuviera escaneada. Al arrastrar aparece una lupa. Si la imagen ya está recta y recortada, pulsa «Foto entera».</p>
+        <h3>Tamaño de la hoja <button class="info" data-ayuda="ayFormato" aria-label="Más información">i</button></h3>
+        <p class="explica oculto" id="ayFormato">Si has marcado una hoja DIN A completa (A4, A3, A2…), su proporción se corrige con exactitud aunque la foto esté inclinada. Si es otro papel o solo una parte, elige «Otro tamaño».</p>
+        <select id="formato">
+          <option value="din">Hoja DIN A entera</option>
+          <option value="auto">Otro tamaño o una parte</option>
+        </select>
+        <div class="fila"><button id="todo">Foto entera</button><button id="girar">Girar 90°</button></div>
+        <button class="bloque" id="otraFoto">Otra foto</button>
+        <button class="principal bloque" id="enderezar">Enderezar</button>
+      </div>
+    </div>
+
+    <!-- 3. Limpieza -->
+    <div class="panel oculto" data-p="p3">
+      <div class="titulo">Limpieza <button class="info" data-ayuda="ayLimpieza" aria-label="Más información">i</button></div>
+      <div class="grupo">
+        <p class="explica oculto" id="ayLimpieza">Lo que se ve en claro se convertirá en líneas de AutoCAD. Si aparecen sombras o manchas, sube el primer control. Si se borran líneas del dibujo, bájalo. El segundo solo hace falta si la luz de la foto es muy desigual.</p>
+        <label class="rango">Quitar sombras y manchas<input type="range" id="sens" min="2" max="40" value="14"></label>
+        <label class="rango">Compensar luz desigual<input type="range" id="ventana" min="5" max="80" value="25"></label>
+        <label class="chk"><input type="checkbox" id="motas" checked> Quitar puntitos sueltos</label>
+        <label class="chk"><input type="checkbox" id="sinLimpiar"> Usar la foto tal cual</label>
+        <button class="principal bloque" id="aDatos">Seguir</button>
+      </div>
+    </div>
+
+    <!-- 4. Datos -->
+    <div class="panel oculto" data-p="p4">
+      <div class="titulo">Datos del plano</div>
+      <div class="grupo">
+        <h3>Tipo de dibujo <button class="info" data-ayuda="ayTipo" aria-label="Más información">i</button></h3>
+        <p class="explica oculto" id="ayTipo">«Plano de vivienda o local» reconoce muros, pilares, puertas y ventanas y los convierte en muros con relleno, bloques PUERTA y VENTANA y cotas, cada uno en su capa. «Calco» copia el dibujo línea a línea, sin reconocer nada.</p>
+        <label class="opcion"><input type="radio" name="tipo" value="plano" checked><span>Plano de vivienda o local<br><small>Muros, puertas y ventanas</small></span></label>
+        <label class="opcion"><input type="radio" name="tipo" value="calco"><span>Calco<br><small>El dibujo tal cual, en líneas</small></span></label>
+      </div>
+      <div class="grupo" id="bloqueMuros">
+        <h3>Muros dibujados con <button class="info" data-ayuda="ayMuros" aria-label="Más información">i</button></h3>
+        <p class="explica oculto" id="ayMuros">«Trazo grueso»: muros repasados o rellenos; también reconoce los de fábrica, dos líneas con rayado entre medias. «Dos líneas»: cada muro con dos líneas finas paralelas y vacío entre ellas.</p>
+        <label class="opcion"><input type="radio" name="muros" value="grueso" checked><span>Trazo grueso</span></label>
+        <label class="opcion"><input type="radio" name="muros" value="dobles"><span>Dos líneas paralelas</span></label>
+      </div>
+      <div class="grupo">
+        <h3>Medida de referencia <button class="info" data-ayuda="ayMedida" aria-label="Más información">i</button></h3>
+        <p class="explica oculto" id="ayMedida">Para que el plano salga a tamaño real. Toca en el dibujo los dos extremos de algo cuya medida sepas (una cota escrita, un muro, una puerta de 0,80 m) y escribe cuánto mide. Sin medida, la escala se estima suponiendo puertas de 80 cm.</p>
+        <p class="nota">Toca dos puntos en el dibujo y escribe la distancia real.</p>
+        <div class="medida">
+          <input type="text" id="real" inputmode="decimal" placeholder="Distancia, p. ej. 0,80" autocomplete="off">
+          <select id="unidad"><option value="m">metros</option><option value="cm">centímetros</option><option value="mm">milímetros</option></select>
+        </div>
+        <button class="bloque" id="borrarCal">Borrar la línea</button>
+        <div class="estado" id="calInfo"></div>
+      </div>
+      <div class="grupo">
+        <h3>Nombre del fichero <button class="info" data-ayuda="ayNombre" aria-label="Más información">i</button></h3>
+        <p class="explica oculto" id="ayNombre">Así se llamará el DXF, por ejemplo «planta baja». Si lo dejas vacío se llamará «plano».</p>
+        <input type="text" id="nombre" placeholder="planta baja" autocomplete="off">
+      </div>
+      <div class="accion"><button class="principal bloque" id="convertir">Convertir a DXF</button></div>
+    </div>
+
+    <!-- 5. Resultado -->
+    <div class="panel oculto" data-p="p5">
+      <div class="titulo">Resultado</div>
+      <div class="grupo">
+        <div id="estado" class="estado" style="margin-top:0"></div>
+        <button class="principal bloque oculto" id="compartir">Compartir o abrir en AutoCAD</button>
+        <a class="btn bloque oculto" id="guardar">Guardar DXF</a>
+        <p class="nota" style="margin-top:8px">AutoCAD abre el DXF directamente. Si necesitas DWG, usa Guardar como.</p>
+      </div>
+      <div class="grupo oculto" id="grupoCapas">
+        <h3>Capas</h3>
+        <table class="capas" id="tablaCapas"></table>
+        <div class="estado" id="escalaInfo"></div>
+      </div>
+      <div class="grupo">
+        <div class="fila"><button id="ajustar">Ajustar datos</button><button id="nuevo">Nuevo plano</button></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<footer><span class="prompt">Comando:</span><span id="cmd"></span></footer>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const MAX_FOTO = 3000;    // lado mayor de la foto que se procesa
+const LADO_SALIDA = 2000; // lado mayor de la imagen que se reconoce
+const MAX_PANTALLA = 1600;
+
+let foto = null, esquinas = null, enderezada = null, limpia = null, puntos = [], resultado = null;
+
+const COMANDOS = {
+  p1: 'NUEVO  Haz una foto del plano o abre una imagen.',
+  p2: 'ESQUINAS  Arrastra los pinzamientos a las esquinas de la hoja y pulsa Enderezar.',
+  p3: 'LIMPIAR  Deja las líneas claras y el papel vacío, y pulsa Seguir.',
+  p4: 'MEDIDA  Precise el primer punto de una medida conocida:',
+  p5: 'DXF',
+};
+const comando = (t) => { $('cmd').textContent = t; };
+function mostrar(id) {
+  const orden = ['p1', 'p2', 'p3', 'p4', 'p5'];
+  document.querySelectorAll('[data-p]').forEach((el) => {
+    if (el.parentElement.id === 'pestanas') {
+      el.classList.toggle('activo', el.dataset.p === id);
+      el.classList.toggle('hecho', orden.indexOf(el.dataset.p) < orden.indexOf(id));
+    } else el.classList.toggle('oculto', el.dataset.p !== id);
+  });
+  comando(COMANDOS[id]);
+  if (window.innerWidth <= 820) window.scrollTo({ top: 0 });
+}
+function lienzo(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function posEnLienzo(cv, e) {
+  const r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height, k: cv.width / r.width };
+}
+const factorPantalla = (cv) => cv.width / (cv.getBoundingClientRect().width || cv.width);
+function esperando(texto) {
+  $('espera').classList.toggle('oculto', !texto);
+  if (texto) $('esperaTexto').textContent = texto;
+}
+document.querySelectorAll('.info').forEach((b) => {
+  b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); $(b.dataset.ayuda).classList.toggle('oculto'); b.classList.toggle('activo'); };
+});
+
+// --- 1. Foto --------------------------------------------------------------------
+function cargar(fichero) {
+  if (!fichero) return;
+  const url = URL.createObjectURL(fichero);
+  const img = new Image();
+  img.onload = () => {
+    const k = Math.min(1, MAX_FOTO / Math.max(img.naturalWidth, img.naturalHeight));
+    foto = lienzo(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k));
+    foto.getContext('2d').drawImage(img, 0, 0, foto.width, foto.height);
+    URL.revokeObjectURL(url);
+    // Solo se propone el nombre del fichero si parece puesto por una persona.
+    const base = fichero.name.replace(/\.[^.]+$/, '');
+    const automatico = !base || /^(image|img|photo|foto|dsc|pxl|whatsapp|screenshot|captura|signal|wp)/i.test(base) ||
+      /^[0-9a-f_-]{10,}$/i.test(base) || (base.match(/\d/g) || []).length > base.length / 2;
+    $('nombre').value = automatico ? '' : base;
+    esquinasPorDefecto();
+    mostrar('p2');
+    dibujarEsquinas();
+  };
+  img.onerror = () => alert('No se ha podido abrir esa imagen.');
+  img.src = url;
+}
+$('foto').onchange = (e) => { cargar(e.target.files[0]); e.target.value = ''; };
+$('archivo').onchange = (e) => { cargar(e.target.files[0]); e.target.value = ''; };
+
+// --- 2. Esquinas ----------------------------------------------------------------
+const cvEsq = $('cvEsq');
+let arrastrando = -1, escalaPantalla = 1;
+function esquinasPorDefecto(margen = 0.06) {
+  const w = foto.width, h = foto.height, mx = w * margen, my = h * margen;
+  esquinas = [[mx, my], [w - mx, my], [w - mx, h - my], [mx, h - my]];
+}
+function dibujarEsquinas() {
+  escalaPantalla = Math.min(1, MAX_PANTALLA / Math.max(foto.width, foto.height));
+  cvEsq.width = Math.round(foto.width * escalaPantalla);
+  cvEsq.height = Math.round(foto.height * escalaPantalla);
+  const g = cvEsq.getContext('2d'), k = factorPantalla(cvEsq);
+  g.drawImage(foto, 0, 0, cvEsq.width, cvEsq.height);
+  const p = esquinas.map(([x, y]) => [x * escalaPantalla, y * escalaPantalla]);
+  g.save();
+  g.beginPath(); g.rect(0, 0, cvEsq.width, cvEsq.height);
+  g.moveTo(...p[0]); for (let i = 3; i >= 1; i--) g.lineTo(...p[i]); g.closePath();
+  g.fillStyle = 'rgba(20,24,30,.6)'; g.fill('evenodd');
+  g.restore();
+  g.beginPath(); g.moveTo(...p[0]); for (const q of p.slice(1)) g.lineTo(...q); g.closePath();
+  g.setLineDash([8 * k, 5 * k]); g.lineWidth = 2 * k; g.strokeStyle = '#4fb3ff'; g.stroke(); g.setLineDash([]);
+  // Pinzamientos cuadrados, como en AutoCAD: azules, y rojo el que se está moviendo.
+  p.forEach(([x, y], i) => {
+    const s = 13 * k;
+    g.fillStyle = i === arrastrando ? '#e5484d' : '#1e6fff';
+    g.fillRect(x - s / 2, y - s / 2, s, s);
+    g.lineWidth = 1.5 * k; g.strokeStyle = '#fff'; g.strokeRect(x - s / 2, y - s / 2, s, s);
+  });
+  if (arrastrando >= 0) lupa(g, p[arrastrando], k);
+}
+// Lupa para colocar la esquina con precisión aunque el dedo la tape.
+function lupa(g, [x, y], k) {
+  const tam = 150 * k, zoom = 3;
+  const izquierda = x > cvEsq.width / 2 || y > cvEsq.height / 2 ? 10 * k : cvEsq.width - tam - 10 * k;
+  const arriba = 10 * k, fuente = tam / zoom / escalaPantalla;
+  g.save();
+  g.beginPath(); g.rect(izquierda, arriba, tam, tam); g.clip();
+  g.drawImage(foto, x / escalaPantalla - fuente / 2, y / escalaPantalla - fuente / 2, fuente, fuente, izquierda, arriba, tam, tam);
+  g.strokeStyle = '#e5484d'; g.lineWidth = 1.5 * k;
+  g.beginPath(); g.moveTo(izquierda + tam / 2, arriba); g.lineTo(izquierda + tam / 2, arriba + tam);
+  g.moveTo(izquierda, arriba + tam / 2); g.lineTo(izquierda + tam, arriba + tam / 2); g.stroke();
+  g.restore();
+  g.strokeStyle = '#c9d1d9'; g.lineWidth = 2 * k; g.strokeRect(izquierda, arriba, tam, tam);
+}
+cvEsq.addEventListener('pointerdown', (e) => {
+  const { x, y, k } = posEnLienzo(cvEsq, e);
+  let mejor = -1, dist = 45 * k;
+  esquinas.forEach(([ex, ey], i) => { const d = Math.hypot(ex * escalaPantalla - x, ey * escalaPantalla - y); if (d < dist) { dist = d; mejor = i; } });
+  if (mejor >= 0) { arrastrando = mejor; cvEsq.setPointerCapture(e.pointerId); dibujarEsquinas(); }
+});
+cvEsq.addEventListener('pointermove', (e) => {
+  if (arrastrando < 0) return;
+  const { x, y } = posEnLienzo(cvEsq, e);
+  esquinas[arrastrando] = [Math.max(0, Math.min(foto.width, x / escalaPantalla)), Math.max(0, Math.min(foto.height, y / escalaPantalla))];
+  dibujarEsquinas();
+});
+const soltar = () => { if (arrastrando >= 0) { arrastrando = -1; dibujarEsquinas(); } };
+cvEsq.addEventListener('pointerup', soltar);
+cvEsq.addEventListener('pointercancel', soltar);
+$('todo').onclick = () => { esquinasPorDefecto(0); dibujarEsquinas(); };
+$('otraFoto').onclick = () => mostrar('p1');
+$('girar').onclick = () => {
+  const g = lienzo(foto.height, foto.width), c = g.getContext('2d');
+  c.translate(g.width, 0); c.rotate(Math.PI / 2); c.drawImage(foto, 0, 0);
+  foto = g; esquinasPorDefecto(); dibujarEsquinas();
+};
+// Homografía que lleva el rectángulo de salida a las cuatro esquinas de la foto.
+function homografia(destino, origen) {
+  const A = [];
+  for (let i = 0; i < 4; i++) {
+    const [u, v] = destino[i], [x, y] = origen[i];
+    A.push([u, v, 1, 0, 0, 0, -u * x, -v * x, x]);
+    A.push([0, 0, 0, u, v, 1, -u * y, -v * y, y]);
+  }
+  for (let c = 0; c < 8; c++) {
+    let m = c;
+    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[m][c])) m = r;
+    [A[c], A[m]] = [A[m], A[c]];
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue;
+      const f = A[r][c] / A[c][c];
+      for (let k = c; k < 9; k++) A[r][k] -= f * A[c][k];
+    }
+  }
+  return A.map((fila, i) => fila[8] / fila[i]).concat(1);
+}
+function enderezar() {
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const [a, b, c, e] = esquinas;
+  let W = Math.max(d(a, b), d(e, c)), H = Math.max(d(a, e), d(b, c));
+  if (W < 20 || H < 20) { alert('La zona marcada es demasiado pequeña.'); return null; }
+  if ($('formato').value === 'din') { if (W >= H) H = W / Math.SQRT2; else W = H / Math.SQRT2; }
+  const k = Math.min(2, LADO_SALIDA / Math.max(W, H));
+  W = Math.round(W * k); H = Math.round(H * k);
+  const h = homografia([[0, 0], [W, 0], [W, H], [0, H]], esquinas);
+  const sw = foto.width, sh = foto.height, s = foto.getContext('2d').getImageData(0, 0, sw, sh).data;
+  const out = lienzo(W, H), datos = out.getContext('2d').createImageData(W, H), o = datos.data;
+  for (let v = 0; v < H; v++) for (let u = 0; u < W; u++) {
+    const z = h[6] * (u + .5) + h[7] * (v + .5) + 1;
+    const x = (h[0] * (u + .5) + h[1] * (v + .5) + h[2]) / z - .5, y = (h[3] * (u + .5) + h[4] * (v + .5) + h[5]) / z - .5;
+    const x0 = Math.max(0, Math.min(sw - 2, Math.floor(x))), y0 = Math.max(0, Math.min(sh - 2, Math.floor(y)));
+    const fx = Math.max(0, Math.min(1, x - x0)), fy = Math.max(0, Math.min(1, y - y0));
+    const i00 = (y0 * sw + x0) * 4, i10 = i00 + 4, i01 = i00 + sw * 4, i11 = i01 + 4, j = (v * W + u) * 4;
+    for (let ch = 0; ch < 3; ch++) o[j + ch] = (s[i00 + ch] * (1 - fx) + s[i10 + ch] * fx) * (1 - fy) + (s[i01 + ch] * (1 - fx) + s[i11 + ch] * fx) * fy;
+    o[j + 3] = 255;
+  }
+  out.getContext('2d').putImageData(datos, 0, 0);
+  return out;
+}
+$('enderezar').onclick = () => {
+  esperando('Enderezando…');
+  setTimeout(() => {
+    try { const r = enderezar(); if (r) { enderezada = r; puntos = []; mostrar('p3'); limpiar(); } }
+    finally { esperando(null); }
+  }, 30);
+};
+
+// --- 3. Limpieza (umbral adaptativo) ---------------------------------------------
+const cvLimpio = $('cvLimpio');
+let negroActual = null; // 1 donde hay trazo
+function limpiar() {
+  const W = enderezada.width, H = enderezada.height;
+  const d = enderezada.getContext('2d').getImageData(0, 0, W, H).data;
+  const gris = new Float32Array(W * H);
+  for (let i = 0, j = 0; i < gris.length; i++, j += 4) gris[i] = .299 * d[j] + .587 * d[j + 1] + .114 * d[j + 2];
+  const negro = new Uint8Array(W * H);
+  if ($('sinLimpiar').checked) {
+    for (let i = 0; i < negro.length; i++) negro[i] = gris[i] < 128 ? 1 : 0;
+  } else {
+    const W1 = W + 1, integral = new Float64Array(W1 * (H + 1));
+    for (let y = 0; y < H; y++) { let fila = 0; for (let x = 0; x < W; x++) { fila += gris[y * W + x]; integral[(y + 1) * W1 + x + 1] = integral[y * W1 + x + 1] + fila; } }
+    const mitad = Math.max(2, Math.round(Math.max(W, H) * $('ventana').value / 1000 / 2));
+    const t = 1 - $('sens').value / 100;
+    const margen = Math.max(4, Math.round(Math.max(W, H) * 0.006)); // el borde de la hoja suele coger mesa o sombra
+    for (let y = margen; y < H - margen; y++) {
+      const y1 = Math.max(0, y - mitad), y2 = Math.min(H, y + mitad + 1);
+      for (let x = margen; x < W - margen; x++) {
+        const x1 = Math.max(0, x - mitad), x2 = Math.min(W, x + mitad + 1);
+        const suma = integral[y2 * W1 + x2] - integral[y1 * W1 + x2] - integral[y2 * W1 + x1] + integral[y1 * W1 + x1];
+        if (gris[y * W + x] < suma / ((x2 - x1) * (y2 - y1)) * t) negro[y * W + x] = 1;
+      }
+    }
+    if ($('motas').checked) quitarMotas(negro, W, H, Math.max(6, Math.round((Math.max(W, H) / 600) ** 2)));
+  }
+  negroActual = negro;
+  // La imagen de trabajo, en blanco y negro, y su vista en colores de CAD (líneas claras sobre fondo oscuro).
+  limpia = lienzo(W, H);
+  const a = limpia.getContext('2d').createImageData(W, H);
+  for (let i = 0, j = 0; i < negro.length; i++, j += 4) { const v = negro[i] ? 0 : 255; a.data[j] = a.data[j + 1] = a.data[j + 2] = v; a.data[j + 3] = 255; }
+  limpia.getContext('2d').putImageData(a, 0, 0);
+  dibujarCad(cvLimpio);
+}
+// Pinta el dibujo limpio con aspecto de AutoCAD en el lienzo indicado.
+function dibujarCad(cv) {
+  const W = limpia.width, H = limpia.height, k = Math.min(1, MAX_PANTALLA / Math.max(W, H));
+  cv.width = Math.round(W * k); cv.height = Math.round(H * k);
+  const vista = lienzo(W, H), d = vista.getContext('2d').createImageData(W, H);
+  for (let i = 0, j = 0; i < negroActual.length; i++, j += 4) {
+    if (negroActual[i]) { d.data[j] = 226; d.data[j + 1] = 230; d.data[j + 2] = 236; } else { d.data[j] = 33; d.data[j + 1] = 40; d.data[j + 2] = 48; }
+    d.data[j + 3] = 255;
+  }
+  vista.getContext('2d').putImageData(d, 0, 0);
+  const g = cv.getContext('2d');
+  g.imageSmoothingEnabled = true;
+  g.drawImage(vista, 0, 0, cv.width, cv.height);
+  return g;
+}
+function quitarMotas(negro, W, H, minimo) {
+  const visto = new Uint8Array(W * H), pila = new Int32Array(W * H), grupo = [];
+  for (let inicio = 0; inicio < negro.length; inicio++) {
+    if (!negro[inicio] || visto[inicio]) continue;
+    let tope = 0; pila[tope++] = inicio; visto[inicio] = 1; grupo.length = 0;
+    while (tope) {
+      const p = pila[--tope]; grupo.push(p);
+      const x = p % W, y = (p - x) / W;
+      if (x > 0 && negro[p - 1] && !visto[p - 1]) { visto[p - 1] = 1; pila[tope++] = p - 1; }
+      if (x < W - 1 && negro[p + 1] && !visto[p + 1]) { visto[p + 1] = 1; pila[tope++] = p + 1; }
+      if (y > 0 && negro[p - W] && !visto[p - W]) { visto[p - W] = 1; pila[tope++] = p - W; }
+      if (y < H - 1 && negro[p + W] && !visto[p + W]) { visto[p + W] = 1; pila[tope++] = p + W; }
+    }
+    if (grupo.length < minimo) for (const p of grupo) negro[p] = 0;
+  }
+}
+let reloj = 0;
+const limpiarLuego = () => { clearTimeout(reloj); reloj = setTimeout(limpiar, 120); };
+$('sens').oninput = limpiarLuego;
+$('ventana').oninput = limpiarLuego;
+$('sinLimpiar').onchange = limpiar;
+$('motas').onchange = limpiar;
+$('aDatos').onclick = () => { mostrar('p4'); dibujarMedida(); };
+
+// --- 4. Datos y medida de referencia ------------------------------------------------
+const tipoElegido = () => document.querySelector('input[name=tipo]:checked').value;
+const murosElegidos = () => document.querySelector('input[name=muros]:checked').value;
+document.querySelectorAll('input[name=tipo]').forEach((r) => { r.onchange = () => { $('bloqueMuros').classList.toggle('oculto', tipoElegido() !== 'plano'); infoCalibracion(); }; });
+const cvMedida = $('cvMedida');
+function dibujarMedida() {
+  const g = dibujarCad(cvMedida), k = cvMedida.width / limpia.width, kk = factorPantalla(cvMedida);
+  const p = puntos.map(([x, y]) => [x * k, y * k]);
+  if (p.length === 2) {
+    g.beginPath(); g.moveTo(...p[0]); g.lineTo(...p[1]); g.lineWidth = 2 * kk; g.strokeStyle = '#3fb950'; g.stroke();
+    const m = [(p[0][0] + p[1][0]) / 2, (p[0][1] + p[1][1]) / 2], real = medidaReal();
+    if (real > 0) {
+      g.font = `${14 * kk}px Consolas, monospace`; g.fillStyle = '#3fb950'; g.textAlign = 'center';
+      g.fillText(`${String(real).replace('.', ',')} ${$('unidad').value}`, m[0], m[1] - 14 * kk);
+    }
+  }
+  for (const [x, y] of p) { const s = 12 * kk; g.fillStyle = '#e5484d'; g.fillRect(x - s / 2, y - s / 2, s, s); g.strokeStyle = '#fff'; g.lineWidth = 1.5 * kk; g.strokeRect(x - s / 2, y - s / 2, s, s); }
+  infoCalibracion();
+}
+cvMedida.addEventListener('pointerdown', (e) => {
+  const { x, y } = posEnLienzo(cvMedida, e), k = limpia.width / cvMedida.width;
+  if (puntos.length >= 2) puntos = [];
+  puntos.push([x * k, y * k]);
+  dibujarMedida();
+});
+$('borrarCal').onclick = () => { puntos = []; dibujarMedida(); };
+$('real').oninput = () => dibujarMedida();
+$('unidad').onchange = () => dibujarMedida();
+const medidaReal = () => parseFloat(String($('real').value).replace(',', '.'));
+const distanciaPx = () => (puntos.length === 2 ? Math.hypot(puntos[0][0] - puntos[1][0], puntos[0][1] - puntos[1][1]) : 0);
+function infoCalibracion() {
+  const real = medidaReal(), info = $('calInfo');
+  const unidades = $('unidad').selectedOptions[0].text;
+  if (puntos.length === 2 && real > 0) { info.innerHTML = `<span class="ok">Escala lista: el plano saldrá a tamaño real, en ${unidades}.</span>`; comando('MEDIDA  Escala lista. Pulse Convertir a DXF.'); }
+  else if (puntos.length === 2) { info.innerHTML = '<span class="pendiente">Escribe cuánto mide la línea verde.</span>'; comando('MEDIDA  Indique la distancia real:'); }
+  else if (puntos.length === 1) { info.innerHTML = '<span class="pendiente">Falta el segundo punto.</span>'; comando('MEDIDA  Precise el segundo punto:'); }
+  else {
+    info.textContent = tipoElegido() === 'plano' ? 'Sin medida: escala estimada con puertas de 80 cm.' : 'Sin medida: el dibujo saldrá con el tamaño de la hoja.';
+    comando(COMANDOS.p4);
+  }
+}
+
+// --- 5. Conversión en la propia tablet ------------------------------------------------
+let trabajador = null;
+const nombreFichero = () => (($('nombre').value.trim() || 'plano').normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'plano');
+$('convertir').onclick = () => {
+  const px = distanciaPx(), real = medidaReal();
+  if (px && !(real > 0)) { alert('Escribe cuánto mide la línea verde, o pulsa «Borrar la línea».'); return; }
+  const opciones = { tipo: tipoElegido(), muros: murosElegidos(), unidad: $('unidad').value, referencia: px ? { p1: puntos[0], p2: puntos[1], real } : null };
+  mostrar('p5');
+  $('compartir').classList.add('oculto'); $('guardar').classList.add('oculto'); $('grupoCapas').classList.add('oculto');
+  $('estado').innerHTML = 'Reconociendo el plano…';
+  comando('DXF  Reconociendo muros, puertas y ventanas…');
+  const g = cvResultado.getContext('2d'); cvResultado.width = cvMedida.width; cvResultado.height = cvMedida.height; g.drawImage(cvMedida, 0, 0);
+  esperando('Reconociendo muros, puertas y ventanas…');
+  if (!trabajador) trabajador = new Worker('trabajo.js');
+  const t0 = performance.now();
+  trabajador.onmessage = (e) => {
+    esperando(null);
+    const d = e.data;
+    if (!d.ok) { $('estado').innerHTML = `<span class="error">No se ha podido convertir: ${d.error}</span>`; comando('DXF  Error.'); return; }
+    resultado = d;
+    mostrarResultado(d, Math.round((performance.now() - t0) / 100) / 10);
+  };
+  trabajador.onerror = (e) => { esperando(null); $('estado').innerHTML = `<span class="error">Error al convertir: ${e.message || 'desconocido'}</span>`; };
+  const tinta = Uint8Array.from(negroActual);
+  trabajador.postMessage({ W: limpia.width, H: limpia.height, tinta, opciones }, [tinta.buffer]);
+};
+
+const COLORES = { MUROS: '#ffffff', 'MUROS-RELLENO': '#8c8c8c', PILARES: '#ffffff', PUERTAS: '#00ffff', VENTANAS: '#4d6dff', COTAS: '#00ff00',
+  'TEXTO-A-MANO': '#ffff00', DETALLES: '#8c8c8c', REVISAR: '#ff3b3b', DIBUJO: '#ffffff' };
+const cvResultado = $('cvResultado');
+function mostrarResultado(d, segundos) {
+  const m = d.modelo, s = m.resumen, k = d.k, u = d.unidad;
+  dibujarModelo(m, k, u);
+  const fichero = nombreFichero() + '.dxf';
+  const blob = new Blob([d.dxf], { type: 'application/dxf' });
+  const enlace = $('guardar');
+  if (enlace.href) URL.revokeObjectURL(enlace.href);
+  enlace.href = URL.createObjectURL(blob); enlace.download = fichero; enlace.textContent = `Guardar ${fichero}`;
+  enlace.classList.remove('oculto');
+  // Compartir: abre el menú del sistema para mandarlo a AutoCAD, a la nube o por correo.
+  let archivo = new File([d.dxf], fichero, { type: 'application/dxf' });
+  if (navigator.canShare && !navigator.canShare({ files: [archivo] })) archivo = new File([d.dxf], fichero, { type: 'application/octet-stream' });
+  if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+    $('compartir').classList.remove('oculto');
+    $('compartir').onclick = () => navigator.share({ files: [archivo], title: fichero }).catch(() => {});
+  }
+  $('estado').innerHTML = `<span class="ok">Plano convertido en ${String(segundos).replace('.', ',')} s.</span>`;
+  const porCapa = {};
+  for (const l of m.lineas) porCapa[l.capa] = (porCapa[l.capa] || 0) + 1;
+  const filas = m.muros.length || m.aberturas.length ? [
+    ['MUROS', `${s.muros} tramos`], ['PILARES', s.pilares || 0], ['PUERTAS', `${s.puertas} bloques`], ['VENTANAS', `${s.ventanas} bloques`],
+    ['COTAS', (m.principal ? 2 : 0) + (puntos.length === 2 ? 1 : 0)], ['TEXTO-A-MANO', `${porCapa['TEXTO-A-MANO'] || 0} trazos`],
+    ['DETALLES', `${porCapa.DETALLES || 0} líneas`], ['REVISAR', `${porCapa.REVISAR || 0} líneas`],
+  ] : [['DIBUJO', `${porCapa.DIBUJO || 0} líneas`]];
+  $('tablaCapas').innerHTML = filas.map(([n, v]) => `<tr><td><span class="color" style="background:${COLORES[n]}"></span>${n}</td><td>${v}</td></tr>`).join('');
+  const unidades = { m: 'metros', cm: 'centímetros', mm: 'milímetros' }[u];
+  let esc = { medida: `Escala real según tu medida, en ${unidades}.`, puertas: `<span class="pendiente">Escala estimada con puertas de 80 cm, en ${unidades}. Compruébala en AutoCAD.</span>`,
+    ninguna: '<span class="pendiente">Sin escala: usa ESCALA con la opción Referencia en AutoCAD.</span>' }[d.origenEscala];
+  for (const a of m.avisos || []) esc += `<br><span class="pendiente">${a}</span>`;
+  $('escalaInfo').innerHTML = esc;
+  $('grupoCapas').classList.remove('oculto');
+  comando(`DXF  ${s.muros} muros, ${s.puertas} puertas, ${s.ventanas} ventanas. Pulse Compartir o Guardar.`);
+}
+// Vista previa con los colores de capa de AutoCAD sobre fondo oscuro.
+function dibujarModelo(m, k, u) {
+  const esc = Math.min(1, MAX_PANTALLA / Math.max(m.W, m.H));
+  cvResultado.width = Math.round(m.W * esc); cvResultado.height = Math.round(m.H * esc);
+  const g = cvResultado.getContext('2d'), kk = factorPantalla(cvResultado);
+  g.fillStyle = '#212830'; g.fillRect(0, 0, cvResultado.width, cvResultado.height);
+  g.save(); g.scale(esc, esc);
+  const grosor = (px) => (px * kk) / esc;
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  for (const l of m.lineas) {
+    g.beginPath(); g.moveTo(...l.pts[0]); for (const p of l.pts.slice(1)) g.lineTo(...p);
+    g.strokeStyle = COLORES[l.capa] || '#ffffff'; g.lineWidth = grosor(1); g.stroke();
+  }
+  const rect = (mu) => (mu.o === 'h' ? [mu.a, mu.c - mu.t / 2, mu.b - mu.a, mu.t] : [mu.c - mu.t / 2, mu.a, mu.t, mu.b - mu.a]);
+  g.fillStyle = COLORES['MUROS-RELLENO'];
+  for (const mu of m.muros) g.fillRect(...rect(mu));
+  for (const p of m.pilares) g.fillRect(p.x0, p.y0, p.x1 - p.x0, p.y1 - p.y0);
+  g.strokeStyle = COLORES.MUROS; g.lineWidth = grosor(1.2);
+  for (const l of m.lazos) { g.beginPath(); g.moveTo(...l[0]); for (const p of l.slice(1)) g.lineTo(...p); g.closePath(); g.stroke(); }
+  for (const p of m.pilares) g.strokeRect(p.x0, p.y0, p.x1 - p.x0, p.y1 - p.y0);
+  for (const a of m.aberturas) {
+    if (a.tipo === 'puerta') {
+      g.strokeStyle = COLORES.PUERTAS; g.lineWidth = grosor(1.2); g.beginPath();
+      const [cx, cy] = a.bisagra;
+      g.moveTo(cx, cy); g.lineTo(cx + a.ancho * a.pe[0], cy + a.ancho * a.pe[1]);
+      for (let s = 0; s <= 24; s++) { const t = (1 - s / 24) * Math.PI / 2; g.lineTo(cx + a.ancho * (Math.cos(t) * a.al[0] + Math.sin(t) * a.pe[0]), cy + a.ancho * (Math.cos(t) * a.al[1] + Math.sin(t) * a.pe[1])); }
+      g.stroke();
+    } else if (a.tipo === 'ventana') {
+      const [x, y, w, h] = rect(a);
+      g.strokeStyle = COLORES.VENTANAS; g.lineWidth = grosor(1.2); g.strokeRect(x, y, w, h);
+      g.beginPath(); if (a.o === 'h') { g.moveTo(x, y + h / 2); g.lineTo(x + w, y + h / 2); } else { g.moveTo(x + w / 2, y); g.lineTo(x + w / 2, y + h); } g.stroke();
+    }
+  }
+  // Cotas generales.
+  const pr = m.principal;
+  if (pr) {
+    const h = Math.max(m.W, m.H) * 0.013;
+    g.strokeStyle = g.fillStyle = COLORES.COTAS; g.lineWidth = grosor(1);
+    g.font = `${h}px Consolas, monospace`; g.textAlign = 'center';
+    const yd = Math.min(m.H - h * 0.5, pr.y1 + 2.5 * h), xd = Math.min(m.W - h * 0.5, pr.x1 + 2.5 * h);
+    g.beginPath(); g.moveTo(pr.x0, yd); g.lineTo(pr.x1, yd); g.moveTo(pr.x0, pr.y1); g.lineTo(pr.x0, yd + h * 0.4); g.moveTo(pr.x1, pr.y1); g.lineTo(pr.x1, yd + h * 0.4);
+    g.moveTo(xd, pr.y0); g.lineTo(xd, pr.y1); g.moveTo(pr.x1, pr.y0); g.lineTo(xd + h * 0.4, pr.y0); g.moveTo(pr.x1, pr.y1); g.lineTo(xd + h * 0.4, pr.y1); g.stroke();
+    const fmt = (v) => (v * k).toFixed(2).replace('.', ',');
+    g.fillText(fmt(pr.x1 - pr.x0), (pr.x0 + pr.x1) / 2, yd - h * 0.35);
+    g.save(); g.translate(xd - h * 0.35, (pr.y0 + pr.y1) / 2); g.rotate(-Math.PI / 2); g.fillText(fmt(pr.y1 - pr.y0), 0, 0); g.restore();
+  }
+  g.restore();
+}
+$('ajustar').onclick = () => { mostrar('p4'); dibujarMedida(); };
+$('nuevo').onclick = () => { $('nombre').value = ''; $('real').value = ''; puntos = []; resultado = null; mostrar('p1'); };
+
+window.addEventListener('resize', () => {
+  if (foto && !cvEsq.classList.contains('oculto')) dibujarEsquinas();
+  else if (limpia && !cvMedida.classList.contains('oculto')) dibujarMedida();
+});
+
+// Funciona sin conexión una vez instalada.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+mostrar('p1');
+</script>
+</body>
+</html>

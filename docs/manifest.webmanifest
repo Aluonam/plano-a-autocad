@@ -1,0 +1,16 @@
+{
+  "name": "Plano a AutoCAD",
+  "short_name": "Plano a CAD",
+  "description": "Foto de un plano dibujado a mano a DXF para AutoCAD, con muros, puertas, ventanas y cotas. Funciona sin conexión.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#2b2f36",
+  "theme_color": "#23272e",
+  "icons": [
+    { "src": "icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
