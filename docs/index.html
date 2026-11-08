@@ -158,6 +158,8 @@
         </select>
         <div class="fila"><button id="todo">Foto entera</button><button id="girar">Girar 90°</button></div>
         <button class="bloque" id="bordesRectos">Bordes rectos</button>
+        <label class="chk"><input type="checkbox" id="autoRectas" checked> Enderezar líneas automáticamente <button class="info" data-ayuda="ayRectas" aria-label="Más información">i</button></label>
+        <p class="explica oculto" id="ayRectas">Si el papel estaba doblado o abombado, los muros salen ondulados aunque las esquinas estén bien. Con esta opción, al enderezar se buscan las líneas largas del dibujo (muros, bordes) y se corrige toda la imagen para que vuelvan a ser rectas. Desactívala si el dibujo tiene curvas largas a propósito.</p>
         <button class="bloque" id="otraFoto">Otra foto</button>
         <button class="principal bloque" id="enderezar">Enderezar</button>
       </div>
@@ -260,6 +262,7 @@
   <iframe id="marcoCad" title="CADCraft" allow="fullscreen; clipboard-read; clipboard-write"></iframe>
 </div>
 
+<script src="reconocer.js"></script>
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
@@ -485,10 +488,125 @@ function enderezar() {
 $('enderezar').onclick = () => {
   esperando('Enderezando…');
   setTimeout(() => {
-    try { const r = enderezar(); if (r) { enderezada = r; puntos = []; trazos = []; resultado = null; mostrar('p3'); limpiar(); } }
+    try {
+      let r = enderezar(), info = null;
+      if (r && $('autoRectas').checked) { info = enderezarLineas(r); r = info.canvas; }
+      if (r) {
+        enderezada = r; puntos = []; trazos = []; resultado = null; mostrar('p3'); limpiar();
+        if (info) comando(info.lineas ? `LIMPIAR  Enderezadas ${info.lineas} líneas onduladas (hasta ${info.maximo} px). Ajuste la limpieza y pulse Seguir.` : 'LIMPIAR  No había líneas onduladas que enderezar. Ajuste la limpieza y pulse Seguir.');
+      }
+    }
     finally { esperando(null); }
   }, 30);
 };
+
+// --- Enderezado automático con las líneas del dibujo ------------------------------------
+// La hoja puede ondular por dentro (papel doblado o abombado): los muros y bordes, que deberían ser rectos,
+// salen en S. Se buscan las líneas largas casi verticales y casi horizontales, se mide cuánto se apartan de
+// una recta y se aplica a toda la imagen una deformación suave que las devuelve a recta.
+function binarizar(canvas, sens = 14, ventana = 25) {
+  const W = canvas.width, H = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, W, H).data;
+  const gris = new Float32Array(W * H);
+  for (let i = 0, j = 0; i < gris.length; i++, j += 4) gris[i] = .299 * d[j] + .587 * d[j + 1] + .114 * d[j + 2];
+  const W1 = W + 1, integral = new Float64Array(W1 * (H + 1));
+  for (let y = 0; y < H; y++) { let fila = 0; for (let x = 0; x < W; x++) { fila += gris[y * W + x]; integral[(y + 1) * W1 + x + 1] = integral[y * W1 + x + 1] + fila; } }
+  const mitad = Math.max(2, Math.round(Math.max(W, H) * ventana / 1000 / 2)), t = 1 - sens / 100;
+  const margen = Math.max(4, Math.round(Math.max(W, H) * 0.006)), negro = new Uint8Array(W * H);
+  for (let y = margen; y < H - margen; y++) {
+    const y1 = Math.max(0, y - mitad), y2 = Math.min(H, y + mitad + 1);
+    for (let x = margen; x < W - margen; x++) {
+      const x1 = Math.max(0, x - mitad), x2 = Math.min(W, x + mitad + 1);
+      const suma = integral[y2 * W1 + x2] - integral[y1 * W1 + x2] - integral[y2 * W1 + x1] + integral[y1 * W1 + x1];
+      if (gris[y * W + x] < suma / ((x2 - x1) * (y2 - y1)) * t) negro[y * W + x] = 1;
+    }
+  }
+  return negro;
+}
+function enderezarLineas(canvas) {
+  const W = canvas.width, H = canvas.height, negro = binarizar(canvas);
+  // Detección a media resolución (más rápida; sobra precisión para medir ondulaciones).
+  const W2 = Math.ceil(W / 2), H2 = Math.ceil(H / 2), m2 = new Uint8Array(W2 * H2);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (negro[y * W + x]) m2[(y >> 1) * W2 + (x >> 1)] = 1;
+  const caminos = Reconocer.trazosEsqueleto(Reconocer.esqueleto(m2, W2, H2), W2, H2).map((c) => c.map(([x, y]) => [x * 2, y * 2]));
+  const lado = Math.max(W, H), largoMin = 0.04 * lado;
+  // Tramos casi rectos y casi verticales u horizontales.
+  const tramos = { v: [], h: [] };
+  for (const c of caminos) {
+    const a = c[0], b = c[c.length - 1], dx = b[0] - a[0], dy = b[1] - a[1], recta = Math.hypot(dx, dy);
+    if (recta < largoMin) continue;
+    let largo = 0; for (let k = 1; k < c.length; k++) largo += Math.hypot(c[k][0] - c[k - 1][0], c[k][1] - c[k - 1][1]);
+    if (largo > 1.25 * recta) continue; // con quiebros: no es una línea recta ondulada
+    const o = Math.abs(dx) <= 0.18 * Math.abs(dy) ? 'v' : Math.abs(dy) <= 0.18 * Math.abs(dx) ? 'h' : null;
+    if (!o) continue;
+    const eje = o === 'v' ? 1 : 0, cruz = 1 - eje; // coordenada a lo largo de la línea y a través de ella
+    const pts = [...c].sort((p, q) => p[eje] - q[eje]);
+    tramos[o].push({ pts, ini: pts[0], fin: pts[pts.length - 1], eje, cruz });
+  }
+  // Se enlazan los tramos de una misma línea que cortan puertas, ventanas o cruces (continuidad de sus extremos).
+  const cadenas = { v: [], h: [] };
+  for (const o of ['v', 'h']) {
+    const lista = tramos[o].sort((p, q) => p.ini[p.eje] - q.ini[q.eje]);
+    const abiertas = [];
+    for (const t of lista) {
+      let mejor = null, coste = Infinity;
+      for (const c of abiertas) {
+        const u = c[c.length - 1].fin, hueco = t.ini[t.eje] - u[t.eje], salto = Math.abs(t.ini[t.cruz] - u[t.cruz]);
+        if (hueco < -3 || hueco > 0.08 * lado || salto > Math.max(4, 0.08 * Math.max(0, hueco) + 3)) continue;
+        if (salto + 0.05 * hueco < coste) { coste = salto + 0.05 * hueco; mejor = c; }
+      }
+      if (mejor) mejor.push(t); else abiertas.push([t]);
+    }
+    cadenas[o] = abiertas;
+  }
+  // Muestras de desplazamiento: cada punto de una línea larga debe ir a la recta media de su línea.
+  const muestras = { v: [], h: [] };
+  let lineas = 0, maximo = 0;
+  for (const o of ['v', 'h']) for (const c of cadenas[o]) {
+    const eje = c[0].eje, cruz = c[0].cruz, pts = c.flatMap((t) => t.pts);
+    const extension = pts[pts.length - 1][eje] - pts[0][eje];
+    if (extension < 0.15 * (o === 'v' ? H : W)) continue;
+    const media = pts.reduce((s, p) => s + p[cruz], 0) / pts.length;
+    const desv = pts.map((p) => media - p[cruz]), peor = Math.max(...desv.map(Math.abs));
+    if (peor > 0.04 * lado || peor < 1) continue; // demasiado curvada para ser una recta, o ya recta
+    lineas++; maximo = Math.max(maximo, peor);
+    for (let k = 0; k < pts.length; k += 4) muestras[o].push([pts[k][0], pts[k][1], desv[k]]);
+  }
+  if (!lineas) return { canvas, lineas: 0, maximo: 0 };
+  // Campo de desplazamiento suave en una rejilla (media ponderada gaussiana, con tendencia a 0 lejos de las líneas).
+  const celda = 24, gw = Math.ceil(W / celda) + 1, gh = Math.ceil(H / celda) + 1;
+  const campo = (lista, sx, sy) => {
+    const g = new Float32Array(gw * gh);
+    if (!lista.length) return g;
+    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+      const x = i * celda, y = j * celda;
+      let s = 0, p = 0.02;
+      for (const [mx, my, d] of lista) {
+        const ex = (mx - x) / sx, ey = (my - y) / sy;
+        if (ex * ex + ey * ey > 9) continue;
+        const w = Math.exp(-0.5 * (ex * ex + ey * ey));
+        s += w * d; p += w;
+      }
+      g[j * gw + i] = s / p;
+    }
+    return g;
+  };
+  // Las líneas verticales dan el desplazamiento en X: varía rápido a lo largo de Y y despacio de una línea a otra.
+  const DX = campo(muestras.v, 0.07 * W, 0.03 * H), DY = campo(muestras.h, 0.03 * W, 0.07 * H);
+  const valor = (g, x, y) => {
+    const fx = x / celda, fy = y / celda, i = Math.min(gw - 2, Math.floor(fx)), j = Math.min(gh - 2, Math.floor(fy)), u = fx - i, v = fy - j;
+    return (g[j * gw + i] * (1 - u) + g[j * gw + i + 1] * u) * (1 - v) + (g[(j + 1) * gw + i] * (1 - u) + g[(j + 1) * gw + i + 1] * u) * v;
+  };
+  const s = canvas.getContext('2d').getImageData(0, 0, W, H).data, out = lienzo(W, H), datos = out.getContext('2d').createImageData(W, H), o = datos.data;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const sx = Math.max(0, Math.min(W - 1.001, x - valor(DX, x, y))), sy = Math.max(0, Math.min(H - 1.001, y - valor(DY, x, y)));
+    const x0 = Math.floor(sx), y0 = Math.floor(sy), fx = sx - x0, fy = sy - y0, x1 = Math.min(W - 1, x0 + 1), y1 = Math.min(H - 1, y0 + 1);
+    const i00 = (y0 * W + x0) * 4, i10 = (y0 * W + x1) * 4, i01 = (y1 * W + x0) * 4, i11 = (y1 * W + x1) * 4, j = (y * W + x) * 4;
+    for (let ch = 0; ch < 3; ch++) o[j + ch] = (s[i00 + ch] * (1 - fx) + s[i10 + ch] * fx) * (1 - fy) + (s[i01 + ch] * (1 - fx) + s[i11 + ch] * fx) * fy;
+    o[j + 3] = 255;
+  }
+  out.getContext('2d').putImageData(datos, 0, 0);
+  return { canvas: out, lineas, maximo: Math.round(maximo) };
+}
 
 // --- 3. Limpieza (umbral adaptativo) ---------------------------------------------
 const cvLimpio = $('cvLimpio');

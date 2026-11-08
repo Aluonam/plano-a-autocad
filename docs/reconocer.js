@@ -2,6 +2,7 @@
 // Entrada: la imagen limpia en blanco y negro (PNG). Salida: un modelo con muros, puertas,
 // ventanas y huecos, más el resto del dibujo como líneas, y un DXF R12 con capas y bloques.
 // Todo trabaja en píxeles de la imagen (x a la derecha, y hacia abajo) hasta escribir el DXF.
+(function () {
 'use strict';
 // En el navegador (o en un worker) no hay require: las funciones de PNG solo se usan en Node.
 const zlib = typeof require === 'function' ? require('zlib') : null;
@@ -1034,6 +1035,7 @@ function calcar(imagen) {
     principal: null, puntosRelleno: [], avisos: [], resumen: { muros: 0, puertas: 0, ventanas: 0, huecos: 0, pilares: 0, lineas: lineas.length } };
 }
 
-const API = { reconocer, reconocerMascara, calcar, mascaraDeTrazos, rectMuro, dxfR12, imagenControl, leerPng };
+const API = { reconocer, reconocerMascara, calcar, mascaraDeTrazos, esqueleto, trazosEsqueleto, rectMuro, dxfR12, imagenControl, leerPng };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 else self.Reconocer = API;
+})();
