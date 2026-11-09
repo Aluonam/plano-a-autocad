@@ -25,11 +25,16 @@ Funciona entera en la tablet: la foto no se sube a ningún sitio y, una vez inst
 incluido en la aplicación (carpeta `docs/cadcraft/`, sin modificar) y funciona en el navegador de la tablet; la
 primera vez que se abre se descarga (unos 5 MB comprimido) y después funciona sin conexión.
 
+Para planos impresos o con todas las líneas finas (por ejemplo, un plano de CAD impreso y fotografiado, aunque
+el papel esté arrugado) se usa el modo «Plano impreso»: cada línea del dibujo se convierte en una recta perfecta
+y cada pareja de líneas paralelas a distancia de muro es un muro, del grosor que tenga. Se activa solo cuando
+todas las líneas son finas.
+
 ## Qué contiene el DXF
 
 | Capa | Contenido |
 |---|---|
-| `MUROS`, `MUROS-RELLENO` | Muros reconocidos (trazo grueso, dos líneas o fábrica rayada), con relleno sólido |
+| `MUROS`, `MUROS-RELLENO` | Muros reconocidos (trazo grueso, dos líneas, fábrica rayada o plano impreso), con relleno sólido |
 | `PILARES` | Postes y pilares |
 | `PUERTAS` | Bloque `PUERTA` con su ancho, giro y sentido de apertura |
 | `VENTANAS` | Bloque `VENTANA` |

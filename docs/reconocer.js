@@ -212,8 +212,8 @@ function regularizarMuros(muros, grueso) {
         let mejor = null, dist = tolE;
         for (const p of muros) {
           if (p.o === m.o) continue;
-          if (m.c < p.a - tolE || m.c > p.b + tolE) continue;
-          const d = Math.abs(fin - p.c);
+          if (m.c < p.a - tolE - m.t / 2 || m.c > p.b + tolE + m.t / 2) continue; // el muro puede llegar a la esquina, más allá del tramo del otro
+          const d = Math.abs(fin - p.c) - p.t / 2; // se mide desde la cara del muro perpendicular, no desde su eje
           if (d <= dist) { dist = d; mejor = p; }
         }
         if (!mejor) continue;
@@ -513,7 +513,8 @@ function reconocerMascara(imagen, opciones = {}) {
   if (!(g.grueso >= 1.4 * Math.max(1, g.fino)) || g.proporcionGruesa < 0.03) {
     avisos.push('No se distinguen bien los muros del resto del dibujo. Repasa los muros con un trazo más grueso que el resto.');
   }
-  const grueso = Math.max(2, g.grueso);
+  let grueso = Math.max(2, g.grueso);
+  const modoLineas = opciones.muros === 'lineas';
   // Muros: lo que sobrevive a una apertura del tamaño del umbral de grosor.
   const radio = Math.max(1, g.umbral / 2);
   const nucleo = new Uint8Array(N);
@@ -525,7 +526,7 @@ function reconocerMascara(imagen, opciones = {}) {
   const puente = Math.max(1, Math.round(0.5 * grueso));
   let muros = [...bandas(masa, W, H, true, largoMin, puente), ...bandas(masa, W, H, false, largoMin, puente)]
     .filter((m) => m.t >= 0.45 * grueso && m.t <= 2.6 * grueso && m.b - m.a >= 2.5 * m.t);
-  if (opciones.muros !== 'dobles') {
+  if (opciones.muros !== 'dobles' && !modoLineas) {
     // Además de los trazos gruesos, los muros de fábrica dibujados con dos líneas y rayado entre medias.
     const masaDoble = abrir(cerrar(tinta, Math.max(2, Math.round(0.9 * grueso))), Math.max(1, 0.4 * grueso));
     const solapa = (m) => muros.some((n) => n.o === m.o && Math.abs(n.c - m.c) < 0.8 * grueso &&
@@ -537,6 +538,97 @@ function reconocerMascara(imagen, opciones = {}) {
         return r >= 0.15 && r <= 0.85;
       });
     muros.push(...dobles);
+  }
+  // Modo líneas: todas las líneas del dibujo se extraen como segmentos; los trozos de una misma línea se
+  // encadenan siguiéndola aunque ondule (papel arrugado) y se sustituyen por una única recta en su posición media;
+  // cada pareja de rectas paralelas a distancia de muro es un muro, del grosor que tenga en el dibujo.
+  function murosDeLineas() {
+    const caminos = trazosEsqueleto(esqueleto(tinta, W, H), W, H);
+    const eps = Math.max(1.2, 0.0012 * lado), minL = Math.max(6, 0.008 * lado);
+    const seg = { h: [], v: [] };
+    for (const cam of caminos) {
+      const pts = simplificar(cam, eps);
+      for (let k = 1; k < pts.length; k++) {
+        const a = pts[k - 1], b = pts[k], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+        if (L < minL) continue;
+        const ang = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI;
+        if (ang <= 12) seg.h.push({ c: (a[1] + b[1]) / 2, a: Math.min(a[0], b[0]), b: Math.max(a[0], b[0]), w: L });
+        else if (ang >= 78) seg.v.push({ c: (a[0] + b[0]) / 2, a: Math.min(a[1], b[1]), b: Math.max(a[1], b[1]), w: L });
+      }
+    }
+    const t1 = Math.max(2, 0.0025 * lado), g1 = Math.max(4, 0.012 * lado), rectas = { h: [], v: [] };
+    for (const o of ['h', 'v']) {
+      const lineas = [];
+      for (const sg of seg[o].sort((p, q) => p.a - q.a)) {
+        let mejor = null, dmin = t1;
+        for (const L of lineas) { if (sg.a > L.b + g1) continue; const d = Math.abs(L.cFin - sg.c); if (d <= dmin) { dmin = d; mejor = L; } }
+        if (mejor) { mejor.piezas.push(sg); if (sg.b >= mejor.b) { mejor.b = sg.b; mejor.cFin = sg.c; } }
+        else lineas.push({ piezas: [sg], a: sg.a, b: sg.b, cFin: sg.c });
+      }
+      for (const L of lineas) { let sc = 0, sw = 0; for (const p of L.piezas) { sc += p.c * p.w; sw += p.w; } L.c = sc / sw; L.largo = L.b - L.a; }
+      rectas[o] = lineas.filter((L) => L.largo >= 2 * minL);
+    }
+    const tmin = Math.max(3, 0.0035 * lado), tmax = Math.max(12, 0.035 * lado), res = [];
+    for (const o of ['h', 'v']) {
+      const L = rectas[o].sort((p, q) => p.c - q.c), pares = [];
+      for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
+        const t = L[j].c - L[i].c;
+        if (t < tmin) continue;
+        if (t > tmax) break;
+        const a = Math.max(L[i].a, L[j].a), b = Math.min(L[i].b, L[j].b);
+        if (b - a < Math.max(3 * t, 0.5 * Math.min(L[i].largo, L[j].largo))) continue;
+        pares.push({ i, j, t, a, b });
+      }
+      pares.sort((p, q) => p.t - q.t);
+      // Cada lado de cada línea se reparte por tramos: una línea exterior larga puede ser muro con varios tramos
+      // de la línea interior, y una pareja corta (un mueble) solo ocupa su propio tramo.
+      const abajo = new Map(), arriba = new Map();
+      const ocupado = (mapa, k, a, b) => (mapa.get(k) || []).reduce((t, [x, y]) => t + Math.max(0, Math.min(b, y) - Math.max(a, x)), 0);
+      const ocupar = (mapa, k, a, b) => { if (!mapa.has(k)) mapa.set(k, []); mapa.get(k).push([a, b]); };
+      for (const p of pares) {
+        const largo = p.b - p.a;
+        if (ocupado(abajo, p.i, p.a, p.b) > 0.3 * largo || ocupado(arriba, p.j, p.a, p.b) > 0.3 * largo) continue;
+        ocupar(abajo, p.i, p.a, p.b); ocupar(arriba, p.j, p.a, p.b);
+        res.push({ o, c: (L[p.i].c + L[p.j].c) / 2, t: p.t, a: p.a, b: p.b });
+      }
+    }
+    // Un plano tiene pocos grosores de muro (exterior, tabiques…). Se agrupan los grosores por la longitud que suman;
+    // los grupos con al menos un 12 % de la longitud total son grosores de muro, y una pareja con otro grosor
+    // (el respaldo de un sofá, los peldaños de una escalera) no es un muro.
+    const total = res.reduce((t, m) => t + (m.b - m.a), 0);
+    // Densidad de grosores ponderada por longitud; sus picos son los grosores de muro candidatos.
+    const dens = (c) => res.reduce((t, m) => t + (m.b - m.a) * Math.exp(-0.5 * ((m.t - c) / Math.max(1, 0.12 * c)) ** 2), 0);
+    const tMax = Math.max(...res.map((m) => m.t), 1), picos = [];
+    let previo = -1, actual = dens(1);
+    for (let c = 1; c <= tMax + 1; c += 0.5) {
+      const siguiente = dens(c + 0.5);
+      if (actual > previo && actual >= siguiente) picos.push(c);
+      previo = actual; actual = siguiente;
+    }
+    // Cada pareja va al pico más cercano; los picos que reúnen al menos un 12 % de la longitud son grosores de muro.
+    const masa = picos.map(() => 0);
+    for (const m of res) { let k = 0; picos.forEach((c, i) => { if (Math.abs(m.t - c) < Math.abs(m.t - picos[k])) k = i; }); if (Math.abs(m.t - picos[k]) <= Math.max(2, 0.25 * picos[k])) masa[k] += m.b - m.a; }
+    const clases = picos.filter((c, i) => masa[i] >= 0.12 * total);
+    const validos = clases.length ? res.filter((m) => clases.some((c) => Math.abs(m.t - c) <= Math.max(2, 0.25 * c))) : res;
+    return { muros: validos, grueso: Math.max(2, (mediana(validos.map((m) => m.t)) || 2 * grueso) / 2), clases };
+  }
+  if (modoLineas) {
+    const r = murosDeLineas();
+    muros = r.muros; grueso = r.grueso; avisos.length = 0; masa.fill(0);
+    // Trozos alineados de un mismo muro, del mismo grosor y separados menos que su grosor (la línea interior
+    // partida por un baño o un armario), son un único muro. Una puerta o una ventana deja un hueco mayor.
+    for (let cambio = true; cambio;) {
+      cambio = false;
+      for (let i = 0; i < muros.length && !cambio; i++) for (let j = 0; j < muros.length && !cambio; j++) {
+        const m = muros[i], n = muros[j];
+        if (i === j || m.o !== n.o || n.a < m.a) continue;
+        const tMax = Math.max(m.t, n.t), hueco = n.a - m.b;
+        if (Math.abs(m.c - n.c) > 0.35 * tMax || Math.abs(m.t - n.t) > 0.25 * tMax || hueco > 1.2 * Math.min(m.t, n.t)) continue;
+        const lm = m.b - m.a, ln = n.b - n.a;
+        muros[i] = { ...m, c: (m.c * lm + n.c * ln) / (lm + ln), t: (m.t * lm + n.t * ln) / (lm + ln), b: Math.max(m.b, n.b) };
+        muros.splice(j, 1); cambio = true;
+      }
+    }
   }
   // Muros marcados a mano: los trazos pintados como muro pasan a ser muros aunque no lo parezcan.
   function murosMarcados(mk) {
@@ -583,6 +675,20 @@ function reconocerMascara(imagen, opciones = {}) {
   }
   for (const m of muros) if (m.forzado) m.suelto = false;
   muros = muros.filter((m) => !m.suelto);
+  if (modoLineas && muros.length) {
+    // Un mueble dibujado con dos líneas (respaldo de un sofá, un armario) forma una pieza suelta; los muros del
+    // edificio se tocan entre sí. Se quedan los grupos de muros con al menos una quinta parte del grupo mayor.
+    const rs = muros.map(rectMuro), pad = Math.max(2, grueso), padre = muros.map((_, i) => i);
+    const raiz = (i) => (padre[i] === i ? i : (padre[i] = raiz(padre[i])));
+    for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+      const r = rs[i], q = rs[j];
+      if (r.x0 - pad <= q.x1 && q.x0 - pad <= r.x1 && r.y0 - pad <= q.y1 && q.y0 - pad <= r.y1) padre[raiz(i)] = raiz(j);
+    }
+    const total = new Map();
+    muros.forEach((m, i) => total.set(raiz(i), (total.get(raiz(i)) || 0) + (m.b - m.a)));
+    const mayor = Math.max(...total.values());
+    muros = muros.filter((m, i) => m.forzado || total.get(raiz(i)) >= 0.2 * mayor || m.b - m.a >= 0.15 * lado);
+  }
 
   // Muros a dos líneas: un tramo con una línea en el centro del muro es una ventana.
   const ventanasDobles = [];
@@ -774,7 +880,7 @@ function reconocerMascara(imagen, opciones = {}) {
   const tocado = (x, y, tol) => { const X = Math.round(x), Y = Math.round(y); return X >= 0 && Y >= 0 && X < W && Y < H && dResto[Y * W + X] <= tol; };
   // Ancho de puerta admisible: con escala conocida, de 0,5 a 1,3 m por hoja; si no, según el grosor del muro.
   const ppm = opciones.pxPorMetro;
-  const puertaMin = ppm ? 0.5 * ppm : huecoMin, puertaMax = ppm ? 1.3 * ppm : 9 * grueso;
+  const puertaMin = ppm ? 0.5 * ppm : huecoMin, puertaMax = ppm ? 1.3 * ppm : (modoLineas ? Math.max(9 * grueso, 0.09 * lado) : 9 * grueso);
   function puntuarArco(o, bisagra, otro, cara, R) {
     const u = Math.sign(otro - bisagra), tol = Math.min(Math.max(2, 0.12 * R), 2 + 0.6 * grueso);
     let arco = 0, n = 0, hoja = 0, nh = 0, lleno = 0, nl = 0;
@@ -907,7 +1013,7 @@ function reconocerMascara(imagen, opciones = {}) {
     const capa = c >= 0 ? comps[c].capa : 'DETALLES';
     if (!capa) continue;
     let pts = simplificar(camino, Math.max(0.9, 0.18 * grueso));
-    if (capa === 'DETALLES' || capa === 'REVISAR') pts = ortogonalizar(rectificar(pts, Math.max(3, 1.2 * grueso, 0.006 * lado), Math.max(8 * grueso, 0.06 * lado)));
+    if (capa === 'DETALLES' || capa === 'REVISAR') pts = ortogonalizar(rectificar(pts, modoLineas ? Math.max(3, 0.008 * lado) : Math.max(3, 1.2 * grueso, 0.006 * lado), modoLineas ? 0.03 * lado : Math.max(8 * grueso, 0.06 * lado)));
     if (longitud(pts) < Math.max(2, 0.5 * grueso) && capa !== 'TEXTO-A-MANO') continue;
     lineas.push({ capa, pts });
   }

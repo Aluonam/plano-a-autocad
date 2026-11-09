@@ -189,9 +189,10 @@
       </div>
       <div class="grupo" id="bloqueMuros">
         <h3>Muros dibujados con <button class="info" data-ayuda="ayMuros" aria-label="Más información">i</button></h3>
-        <p class="explica oculto" id="ayMuros">«Trazo grueso»: muros repasados o rellenos; también reconoce los de fábrica, dos líneas con rayado entre medias. «Dos líneas»: cada muro con dos líneas finas paralelas y vacío entre ellas.</p>
+        <p class="explica oculto" id="ayMuros">«Trazo grueso»: muros repasados o rellenos; también reconoce los de fábrica, dos líneas con rayado entre medias. «Dos líneas»: cada muro con dos líneas finas paralelas y vacío entre ellas. «Plano impreso o a líneas finas»: para planos de CAD impresos o dibujos con todas las líneas finas; cada línea se convierte en una recta perfecta aunque el papel esté arrugado, y cada pareja de líneas paralelas a distancia de muro es un muro, sea exterior o tabique.</p>
         <label class="opcion"><input type="radio" name="muros" value="grueso" checked><span>Trazo grueso</span></label>
         <label class="opcion"><input type="radio" name="muros" value="dobles"><span>Dos líneas paralelas</span></label>
+        <label class="opcion"><input type="radio" name="muros" value="lineas"><span>Plano impreso o a líneas finas<br><small>Muros a dos líneas de distinto grosor; endereza el papel arrugado</small></span></label>
       </div>
       <div class="grupo">
         <h3>Medida de referencia <button class="info" data-ayuda="ayMedida" aria-label="Más información">i</button></h3>

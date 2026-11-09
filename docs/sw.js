@@ -1,7 +1,7 @@
 // Guarda la aplicación en la tablet para que funcione sin conexión. Las fotos y los planos no pasan por aquí:
 // se procesan en memoria y solo se guardan donde el usuario decida (Guardar o Compartir).
 'use strict';
-const VERSION = 'plano-a-cad-7';
+const VERSION = 'plano-a-cad-8';
 const FICHEROS = ['./', 'index.html', 'reconocer.js', 'dxf.js', 'trabajo.js', 'manifest.webmanifest', 'icono-192.png', 'icono-512.png'];
 
 self.addEventListener('install', (e) => {

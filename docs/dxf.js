@@ -19,6 +19,17 @@ function convertirPlano(imagen, opciones) {
   const ref = opciones.referencia;
   const pxRef = ref ? Math.hypot(ref.p2[0] - ref.p1[0], ref.p2[1] - ref.p1[1]) : 0;
   let k, origenEscala, modelo;
+  // Si en «trazo grueso» no se distinguen muros (todas las líneas son finas, como en un plano impreso),
+  // se reconoce automáticamente en el modo de líneas.
+  const reconocerConModo = (img, op) => {
+    let m = R.reconocerMascara(img, op);
+    const fino = m.grosor.grueso / Math.max(img.W, img.H) < 0.003; // trazos más gruesos por debajo del 3 por mil
+    if ((op.muros || 'grueso') === 'grueso' && (fino || m.avisos.some((t) => t.startsWith('No se distinguen')))) {
+      m = R.reconocerMascara(img, { ...op, muros: 'lineas' });
+      m.avisos = ['Todas las líneas son finas: se ha reconocido como plano impreso, con los muros a dos líneas.', ...m.avisos];
+    }
+    return m;
+  };
   // Marcas pintadas a mano en la tablet (muro, puerta, ventana, pilar, borrar).
   const marcas = opciones.trazos && opciones.trazos.length ? R.mascaraDeTrazos(opciones.trazos, imagen.W, imagen.H) : null;
   if (opciones.tipo === 'calco') {
@@ -30,14 +41,14 @@ function convertirPlano(imagen, opciones) {
   } else if (pxRef > 0) {
     k = ref.real / pxRef; // unidades de dibujo por píxel
     origenEscala = 'medida';
-    modelo = R.reconocerMascara(imagen, { muros: opciones.muros, marcas, pxPorMetro: 1 / (k * metrosPorUnidad) });
+    modelo = reconocerConModo(imagen, { muros: opciones.muros, marcas, pxPorMetro: 1 / (k * metrosPorUnidad) });
   } else {
-    modelo = R.reconocerMascara(imagen, { muros: opciones.muros, marcas });
+    modelo = reconocerConModo(imagen, { muros: opciones.muros, marcas });
     const anchos = modelo.aberturas.filter((a) => a.tipo === 'puerta').map((a) => a.ancho).sort((a, b) => a - b);
     if (anchos.length >= 2) {
       k = (ANCHO_PUERTA_M / metrosPorUnidad) / anchos[anchos.length >> 1];
       origenEscala = 'puertas';
-      modelo = R.reconocerMascara(imagen, { muros: opciones.muros, marcas, pxPorMetro: 1 / (k * metrosPorUnidad) });
+      modelo = reconocerConModo(imagen, { muros: opciones.muros, marcas, pxPorMetro: 1 / (k * metrosPorUnidad) });
     } else {
       k = (25.4 / 72) / MM_POR_UNIDAD[unidad];
       origenEscala = 'ninguna';
