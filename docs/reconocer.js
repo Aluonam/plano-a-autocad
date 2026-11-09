@@ -404,6 +404,28 @@ function ortogonalizar(pts, tolerancia = 8) {
   });
   return out.length >= 2 ? out : pts;
 }
+// Rectificar: si un tramo largo de la polilínea cabe en un pasillo estrecho alrededor de una recta casi
+// horizontal o vertical (un muro o un borde que solo ondula por la foto), se sustituye por esa recta.
+function rectificar(pts, tol, largoMin) {
+  if (pts.length < 3) return pts;
+  const out = [pts[0]];
+  let i = 0;
+  while (i < pts.length - 1) {
+    let mejor = i + 1;
+    for (let j = pts.length - 1; j > i + 1; j--) {
+      const a = pts[i], b = pts[j], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+      if (L < largoMin) continue;
+      const ang = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI;
+      if (ang > 12 && ang < 78) continue;
+      let cabe = true;
+      for (let k = i + 1; k < j && cabe; k++) if (Math.abs(dy * (pts[k][0] - a[0]) - dx * (pts[k][1] - a[1])) / L > tol) cabe = false;
+      if (cabe) { mejor = j; break; }
+    }
+    out.push(pts[mejor]);
+    i = mejor;
+  }
+  return out;
+}
 function longitud(pts) { let s = 0; for (let k = 1; k < pts.length; k++) s += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]); return s; }
 
 // ---------------------------------------------------------------- reconocimiento
@@ -605,6 +627,25 @@ function reconocerMascara(imagen, opciones = {}) {
     }
     return false;
   };
+  const enBorrado = (x, y) => {
+    if (!marcas || !marcas.borrar) return false;
+    const X = Math.round(x), Y = Math.round(y);
+    return X >= 0 && Y >= 0 && X < W && Y < H && marcas.borrar[Y * W + X] === 1;
+  };
+  if (marcas && marcas.borrar) {
+    // Los tramos de muro cuyo eje cae en la zona borrada desaparecen (el resto del muro se conserva).
+    const nuevos = [];
+    for (const m of muros) {
+      let inicio = null;
+      const cerrar = (fin) => { if (inicio !== null && fin - inicio >= 1.5 * m.t) nuevos.push({ ...m, a: inicio, b: fin, unido: { a: inicio === m.a && !!(m.unido && m.unido.a), b: fin === m.b && !!(m.unido && m.unido.b) } }); inicio = null; };
+      for (let al = m.a; al <= m.b; al += 1) {
+        const [x, y] = m.o === 'h' ? [al, m.c] : [m.c, al];
+        if (enBorrado(x, y)) cerrar(al); else if (inicio === null) inicio = al;
+      }
+      cerrar(m.b);
+    }
+    muros = nuevos;
+  }
   for (const tipo of ['puerta', 'ventana']) {
     const mk = marcas && marcas[tipo];
     if (!mk) continue;
@@ -699,6 +740,7 @@ function reconocerMascara(imagen, opciones = {}) {
         for (let x = Math.max(0, Math.floor(p.x0 - margen)); x < Math.min(W, Math.ceil(p.x1 + margen)); x++) cubierto[y * W + x] = 1;
     }
   }
+  for (let k = pilares.length - 1; k >= 0; k--) { const p = pilares[k]; if (enBorrado((p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2)) pilares.splice(k, 1); }
   const resto = new Uint8Array(N);
   for (let i = 0; i < N; i++) resto[i] = tinta[i] && !cubierto[i] ? 1 : 0;
   const dResto = distanciaA(resto, W, H);
@@ -770,6 +812,7 @@ function reconocerMascara(imagen, opciones = {}) {
   for (const h of candidatos) {
     const g0 = h.b - h.a;
     if (aberturas.some((x) => x.o === h.o && Math.abs(x.c - h.c) < grueso && Math.min(x.b, h.b) - Math.max(x.a, h.a) > 0.3 * g0)) continue;
+    { const medio = (h.a + h.b) / 2, [mx, my] = h.o === 'h' ? [medio, h.c] : [h.c, medio]; if (enBorrado(mx, my)) continue; }
     const forz = h.forzado || tipoMarcado(h);
     if (forz === 'ventana') {
       aberturas.push({ tipo: 'ventana', o: h.o, c: h.c, a: h.a, b: h.b, t: h.t });
@@ -864,7 +907,7 @@ function reconocerMascara(imagen, opciones = {}) {
     const capa = c >= 0 ? comps[c].capa : 'DETALLES';
     if (!capa) continue;
     let pts = simplificar(camino, Math.max(0.9, 0.18 * grueso));
-    if (capa === 'DETALLES' || capa === 'REVISAR') pts = ortogonalizar(pts);
+    if (capa === 'DETALLES' || capa === 'REVISAR') pts = ortogonalizar(rectificar(pts, Math.max(3, 1.2 * grueso, 0.006 * lado), Math.max(8 * grueso, 0.06 * lado)));
     if (longitud(pts) < Math.max(2, 0.5 * grueso) && capa !== 'TEXTO-A-MANO') continue;
     lineas.push({ capa, pts });
   }
