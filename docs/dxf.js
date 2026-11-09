@@ -44,8 +44,13 @@ function convertirPlano(imagen, opciones) {
     modelo = reconocerConModo(imagen, { muros: opciones.muros, marcas, pxPorMetro: 1 / (k * metrosPorUnidad) });
   } else {
     modelo = reconocerConModo(imagen, { muros: opciones.muros, marcas });
-    const anchos = modelo.aberturas.filter((a) => a.tipo === 'puerta').map((a) => a.ancho).sort((a, b) => a - b);
-    if (anchos.length >= 2) {
+    // Las puertas que marcó el usuario mandan; si no hay, hacen falta al menos dos detectadas de ancho parecido.
+    const puertas = modelo.aberturas.filter((a) => a.tipo === 'puerta');
+    const marcadas = puertas.filter((a) => a.marcada).map((a) => a.ancho).sort((a, b) => a - b);
+    let anchos = puertas.map((a) => a.ancho).sort((a, b) => a - b);
+    if (anchos.length) anchos = anchos.filter((w) => w >= 0.5 * anchos[anchos.length - 1]);
+    if (marcadas.length) anchos = marcadas;
+    if (marcadas.length || anchos.length >= 2) {
       k = (ANCHO_PUERTA_M / metrosPorUnidad) / anchos[anchos.length >> 1];
       origenEscala = 'puertas';
       modelo = reconocerConModo(imagen, { muros: opciones.muros, marcas, pxPorMetro: 1 / (k * metrosPorUnidad) });

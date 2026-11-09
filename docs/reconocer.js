@@ -838,16 +838,17 @@ function reconocerMascara(imagen, opciones = {}) {
     // Pilares marcados a mano: cada mancha pintada como pilar.
     const visto = new Uint8Array(N), mk = marcas.pilar;
     for (let i0 = 0; i0 < N; i0++) {
-      if (!tinta[i0] || !mk[i0] || visto[i0]) continue;
+      if (!mk[i0] || visto[i0]) continue;
       const pila = [i0]; visto[i0] = 1;
-      let x0 = W, y0 = H, x1 = 0, y1 = 0, area = 0;
+      let x0 = W, y0 = H, x1 = 0, y1 = 0, area = 0, mx0 = W, my0 = H, mx1 = 0, my1 = 0;
       while (pila.length) {
         const i = pila.pop(), x = i % W, y = (i - x) / W;
-        area++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
-        for (const j of [i - 1, i + 1, i - W, i + W]) if (j >= 0 && j < N && tinta[j] && mk[j] && !visto[j]) { visto[j] = 1; pila.push(j); }
+        if (x < mx0) mx0 = x; if (x > mx1) mx1 = x; if (y < my0) my0 = y; if (y > my1) my1 = y;
+        if (tinta[i]) { area++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        for (const j of [i - 1, i + 1, i - W, i + W]) if (j >= 0 && j < N && mk[j] && !visto[j]) { visto[j] = 1; pila.push(j); }
       }
-      if (area < 4) continue;
-      const cx = (x0 + x1 + 1) / 2, cy = (y0 + y1 + 1) / 2, lado = Math.max(0.6 * grueso, Math.max(x1 - x0 + 1, y1 - y0 + 1) / 2);
+      if (area < 4) { x0 = mx0; y0 = my0; x1 = mx1; y1 = my1; }
+      const cx = (x0 + x1 + 1) / 2, cy = (y0 + y1 + 1) / 2, lado = Math.max(0.6 * grueso, Math.min(x1 - x0 + 1, y1 - y0 + 1) / 2);
       const p = { x0: cx - lado, y0: cy - lado, x1: cx + lado, y1: cy + lado };
       pilares.push(p);
       for (let y = Math.max(0, Math.floor(p.y0 - margen)); y < Math.min(H, Math.ceil(p.y1 + margen)); y++)
@@ -917,6 +918,18 @@ function reconocerMascara(imagen, opciones = {}) {
       let si = 0, n = 0;
       for (let al = Math.ceil(h.a); al < h.b; al++) { n++; if (marcaEnBanda(mk, h.o, h.c, h.t, al)) si++; }
       if (n && si / n >= 0.3) return tipo;
+      if (tipo === 'puerta') {
+        // Zona de giro a cada lado del hueco: un cuadrado de lado el ancho del hueco.
+        const g0 = h.b - h.a;
+        for (const s of [-1, 1]) {
+          let dentro = 0, tot = 0;
+          for (let i = 1; i < 8; i++) for (let j = 1; j < 8; j++) {
+            const al = h.a + g0 * i / 8, pe = h.c + s * (h.t / 2 + g0 * j / 8), [x, y] = h.o === 'h' ? [Math.round(al), Math.round(pe)] : [Math.round(pe), Math.round(al)];
+            tot++; if (x >= 0 && y >= 0 && x < W && y < H && mk[y * W + x]) dentro++;
+          }
+          if (dentro / tot >= 0.15) return tipo;
+        }
+      }
     }
     return null;
   };
@@ -949,7 +962,7 @@ function reconocerMascara(imagen, opciones = {}) {
         }
       }
       const mitad = (h.a + h.b) / 2;
-      if (marcada || (g0 / 2 >= puertaMin * 0.8 && g0 / 2 <= puertaMax)) {
+      if (marcada || (g0 / 2 >= puertaMin && g0 / 2 <= puertaMax)) {
         const p1 = puntuarArco(h.o, h.a, mitad, cara, g0 / 2), p2 = puntuarArco(h.o, h.b, mitad, cara, g0 / 2);
         const v2 = Math.min(p1.arco, p2.arco) + 0.1;
         if ((marcada ? v2 > 0.1 : p1.arco >= 0.6 && p2.arco >= 0.6) && (!mejor || v2 > mejor.v)) mejor = { v: v2, tipo: 'puerta-doble', bisagras: [[h.a, mitad], [h.b, mitad]], s, R: g0 / 2 };
@@ -959,7 +972,7 @@ function reconocerMascara(imagen, opciones = {}) {
       for (const [bis, otro] of mejor.bisagras) {
         const u = Math.sign(otro - bis);
         const centro = punto(h.o, bis, h.c + mejor.s * h.t / 2);
-        aberturas.push({ tipo: 'puerta', o: h.o, c: h.c, a: Math.min(bis, otro), b: Math.max(bis, otro), t: h.t, bisagra: centro,
+        aberturas.push({ tipo: 'puerta', marcada, o: h.o, c: h.c, a: Math.min(bis, otro), b: Math.max(bis, otro), t: h.t, bisagra: centro,
           al: punto(h.o, u, 0), pe: punto(h.o, 0, mejor.s), ancho: mejor.R });
         consumir.push({ forma: 'arco', centro, R: mejor.R, al: punto(h.o, u, 0), pe: punto(h.o, 0, mejor.s) });
       }
