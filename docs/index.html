@@ -521,6 +521,9 @@ function binarizar(canvas, sens = 14, ventana = 25) {
       if (gris[y * W + x] < suma / ((x2 - x1) * (y2 - y1)) * t) negro[y * W + x] = 1;
     }
   }
+  const papel = fondoPapel(gris, W, H);
+  for (let y = margen; y < H - margen; y++) for (let x = margen; x < W - margen; x++) if (gris[y * W + x] < 0.58 * papel(x, y)) negro[y * W + x] = 1;
+  rellenarAgujeros(negro, W, H, Math.max(12, Math.round((Math.max(W, H) / 300) ** 2)));
   return negro;
 }
 function enderezarLineas(canvas) {
@@ -609,6 +612,29 @@ function enderezarLineas(canvas) {
   return { canvas: out, lineas, maximo: Math.round(maximo) };
 }
 
+// Brillo del papel alrededor de cada punto: máximo en bloques grandes, ampliado a los vecinos y suavizado.
+// Un muro relleno o una sombra no lo oscurecen, porque cada zona incluye papel.
+function fondoPapel(gris, W, H) {
+  const B = Math.max(24, Math.round(Math.max(W, H) / 40)), bw = Math.ceil(W / B), bh = Math.ceil(H / B);
+  const m = new Float32Array(bw * bh);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = ((y / B) | 0) * bw + ((x / B) | 0), g = gris[y * W + x]; if (g > m[i]) m[i] = g; }
+  const mx = new Float32Array(bw * bh), sv = new Float32Array(bw * bh);
+  for (let j = 0; j < bh; j++) for (let i = 0; i < bw; i++) { let v = 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const a = i + di, b = j + dj; if (a >= 0 && b >= 0 && a < bw && b < bh) v = Math.max(v, m[b * bw + a]); } mx[j * bw + i] = v; }
+  for (let j = 0; j < bh; j++) for (let i = 0; i < bw; i++) { let v = 0, n = 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const a = i + di, b = j + dj; if (a >= 0 && b >= 0 && a < bw && b < bh) { v += mx[b * bw + a]; n++; } } sv[j * bw + i] = v / n; }
+  return (x, y) => {
+    const fx = Math.max(0, Math.min(bw - 1.001, x / B - 0.5)), fy = Math.max(0, Math.min(bh - 1.001, y / B - 0.5));
+    const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j, i1 = Math.min(bw - 1, i + 1), j1 = Math.min(bh - 1, j + 1);
+    return (sv[j * bw + i] * (1 - u) + sv[j * bw + i1] * u) * (1 - v) + (sv[j1 * bw + i] * (1 - u) + sv[j1 * bw + i1] * u) * v;
+  };
+}
+// Rellena los agujeritos blancos encerrados en el trazo (el interior moteado de un muro macizo).
+function rellenarAgujeros(negro, W, H, minimo) {
+  const blanco = new Uint8Array(W * H);
+  for (let i = 0; i < blanco.length; i++) blanco[i] = negro[i] ? 0 : 1;
+  quitarMotas(blanco, W, H, minimo);
+  for (let i = 0; i < blanco.length; i++) negro[i] = blanco[i] ? 0 : 1;
+}
+
 // --- 3. Limpieza (umbral adaptativo) ---------------------------------------------
 const cvLimpio = $('cvLimpio');
 let negroActual = null; // 1 donde hay trazo
@@ -634,6 +660,9 @@ function limpiar() {
         if (gris[y * W + x] < suma / ((x2 - x1) * (y2 - y1)) * t) negro[y * W + x] = 1;
       }
     }
+    const papel = fondoPapel(gris, W, H), oscuro = 0.62 - $('sens').value / 400;
+    for (let y = margen; y < H - margen; y++) for (let x = margen; x < W - margen; x++) if (gris[y * W + x] < oscuro * papel(x, y)) negro[y * W + x] = 1;
+    rellenarAgujeros(negro, W, H, Math.max(12, Math.round((Math.max(W, H) / 300) ** 2)));
     if ($('motas').checked) quitarMotas(negro, W, H, Math.max(6, Math.round((Math.max(W, H) / 600) ** 2)));
   }
   negroActual = negro;

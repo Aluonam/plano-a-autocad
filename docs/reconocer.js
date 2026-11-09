@@ -201,7 +201,7 @@ function regularizarMuros(muros, grueso) {
     const cuantos1 = ts.filter((t) => Math.abs(t - c1) <= Math.abs(t - c2)).length, cuantos2 = ts.length - cuantos1;
     if (c2 / c1 >= 1.4 && cuantos1 >= 2 && cuantos2 >= 2) clases = [c1, c2];
   }
-  for (const m of muros) m.t = clases.reduce((a, c) => (Math.abs(c - m.t) < Math.abs(a - m.t) ? c : a), clases[0]);
+  for (const m of muros) { const c = clases.reduce((a, k) => (Math.abs(k - m.t) < Math.abs(a - m.t) ? k : a), clases[0]); if (Math.abs(m.t - c) <= 0.35 * c) m.t = c; }
   // 3. Esquinas: cada extremo se lleva hasta la cara exterior del muro perpendicular cercano.
   const tolE = 2.2 * grueso;
   for (let vuelta = 0; vuelta < 2; vuelta++) {
@@ -528,12 +528,13 @@ function reconocerMascara(imagen, opciones = {}) {
     .filter((m) => m.t >= 0.45 * grueso && m.t <= 2.6 * grueso && m.b - m.a >= 2.5 * m.t);
   if (opciones.muros !== 'dobles' && !modoLineas) {
     // Además de los trazos gruesos, los muros de fábrica dibujados con dos líneas y rayado entre medias.
-    const masaDoble = abrir(cerrar(tinta, Math.max(2, Math.round(0.9 * grueso))), Math.max(1, 0.4 * grueso));
+    const rFab = Math.max(2, Math.round(Math.min(0.9 * grueso, 0.006 * lado))); // el hueco entre las dos líneas de un muro de fábrica no crece con el grosor de los muros macizos
+    const masaDoble = abrir(cerrar(tinta, rFab), Math.max(1, 0.45 * rFab));
     const solapa = (m) => muros.some((n) => n.o === m.o && Math.abs(n.c - m.c) < 0.8 * grueso &&
       Math.min(n.b, m.b) - Math.max(n.a, m.a) > 0.5 * (m.b - m.a));
     const dobles = [...bandas(masaDoble, W, H, true, largoMin, puente), ...bandas(masaDoble, W, H, false, largoMin, puente)]
       .filter((m) => {
-        if (m.t < 0.8 * grueso || m.t > 3.2 * grueso || m.b - m.a < 3 * m.t || solapa(m) || !carasDibujadas(m)) return false;
+        if (m.t < Math.min(0.8 * grueso, 1.6 * rFab) || m.t > Math.min(3.2 * grueso, 0.025 * lado) || m.b - m.a < 3 * m.t || solapa(m) || !carasDibujadas(m)) return false;
         const r = rayadoInterior(m);
         return r >= 0.15 && r <= 0.85;
       });
@@ -542,8 +543,8 @@ function reconocerMascara(imagen, opciones = {}) {
   // Modo líneas: todas las líneas del dibujo se extraen como segmentos; los trozos de una misma línea se
   // encadenan siguiéndola aunque ondule (papel arrugado) y se sustituyen por una única recta en su posición media;
   // cada pareja de rectas paralelas a distancia de muro es un muro, del grosor que tenga en el dibujo.
-  function murosDeLineas() {
-    const caminos = trazosEsqueleto(esqueleto(tinta, W, H), W, H);
+  function murosDeLineas(mascara = tinta) {
+    const caminos = trazosEsqueleto(esqueleto(mascara, W, H), W, H);
     const eps = Math.max(1.2, 0.0012 * lado), minL = Math.max(6, 0.008 * lado);
     const seg = { h: [], v: [] };
     for (const cam of caminos) {
@@ -612,6 +613,13 @@ function reconocerMascara(imagen, opciones = {}) {
     const validos = clases.length ? res.filter((m) => clases.some((c) => Math.abs(m.t - c) <= Math.max(2, 0.25 * c))) : res;
     return { muros: validos, grueso: Math.max(2, (mediana(validos.map((m) => m.t)) || 2 * grueso) / 2), clases };
   }
+  if (!modoLineas && opciones.muros !== 'dobles') {
+    // Además de los trazos gruesos, los tabiques dibujados con dos líneas finas (habituales en planos impresos).
+    const dm = distanciaA(masa, W, H), fina = new Uint8Array(N);
+    for (let i = 0; i < N; i++) fina[i] = tinta[i] && dm[i] > 1.5 ? 1 : 0;
+    const solapaGrueso = (m) => muros.some((n) => n.o === m.o && Math.abs(n.c - m.c) < Math.max(n.t, m.t) && Math.min(n.b, m.b) - Math.max(n.a, m.a) > 0.3 * (m.b - m.a));
+    for (const m of murosDeLineas(fina).muros) if (m.t < 0.9 * grueso && !solapaGrueso(m)) muros.push({ ...m, delgado: true });
+  }
   if (modoLineas) {
     const r = murosDeLineas();
     muros = r.muros; grueso = r.grueso; avisos.length = 0; masa.fill(0);
@@ -675,7 +683,7 @@ function reconocerMascara(imagen, opciones = {}) {
   }
   for (const m of muros) if (m.forzado) m.suelto = false;
   muros = muros.filter((m) => !m.suelto);
-  if (modoLineas && muros.length) {
+  if ((modoLineas || muros.some((m) => m.delgado)) && muros.length) {
     // Un mueble dibujado con dos líneas (respaldo de un sofá, un armario) forma una pieza suelta; los muros del
     // edificio se tocan entre sí. Se quedan los grupos de muros con al menos una quinta parte del grupo mayor.
     const rs = muros.map(rectMuro), pad = Math.max(2, grueso), padre = muros.map((_, i) => i);
@@ -687,7 +695,7 @@ function reconocerMascara(imagen, opciones = {}) {
     const total = new Map();
     muros.forEach((m, i) => total.set(raiz(i), (total.get(raiz(i)) || 0) + (m.b - m.a)));
     const mayor = Math.max(...total.values());
-    muros = muros.filter((m, i) => m.forzado || total.get(raiz(i)) >= 0.2 * mayor || m.b - m.a >= 0.15 * lado);
+    muros = muros.filter((m, i) => m.forzado || (!modoLineas && !m.delgado) || total.get(raiz(i)) >= 0.2 * mayor || m.b - m.a >= 0.15 * lado);
   }
 
   // Muros a dos líneas: un tramo con una línea en el centro del muro es una ventana.
@@ -882,12 +890,12 @@ function reconocerMascara(imagen, opciones = {}) {
   const ppm = opciones.pxPorMetro;
   const puertaMin = ppm ? 0.5 * ppm : huecoMin, puertaMax = ppm ? 1.3 * ppm : (modoLineas ? Math.max(9 * grueso, 0.09 * lado) : 9 * grueso);
   function puntuarArco(o, bisagra, otro, cara, R) {
-    const u = Math.sign(otro - bisagra), tol = Math.min(Math.max(2, 0.12 * R), 2 + 0.6 * grueso);
-    let arco = 0, n = 0, hoja = 0, nh = 0, lleno = 0, nl = 0;
+    const u = Math.sign(otro - bisagra), tol = Math.min(Math.max(2, 0.08 * R), 2 + 0.5 * grueso);
+    let arco = 0, n = 0, hoja = 0, nh = 0, lleno = 0, nl = 0, racha = 0, rachaMax = 0;
     for (let k = 0; k <= 20; k++) {
       const th = (8 + 74 * k / 20) * Math.PI / 180, cs = Math.cos(th), sn = Math.sin(th);
       const [x, y] = punto(o, bisagra + u * R * cs, cara.pe + cara.s * R * sn);
-      n++; if (tocado(x, y, tol)) arco++;
+      n++; if (tocado(x, y, tol)) { arco++; rachaMax = Math.max(rachaMax, ++racha); } else racha = 0;
       // Dentro del giro de una puerta no suele haber dibujo.
       for (const f of [0.45, 0.7]) {
         const [xi, yi] = punto(o, bisagra + u * R * f * cs, cara.pe + cara.s * R * f * sn);
@@ -899,7 +907,7 @@ function reconocerMascara(imagen, opciones = {}) {
       nh++; if (tocado(x, y, tol)) hoja++;
     }
     const vacio = 1 - lleno / nl;
-    return { arco: vacio >= 0.75 ? arco / n : 0, hoja: hoja / nh };
+    return { arco: vacio >= 0.75 ? Math.min(arco, rachaMax + 3) / n : 0, hoja: hoja / nh };
   }
   const tipoMarcado = (h) => {
     if (!marcas) return null;
